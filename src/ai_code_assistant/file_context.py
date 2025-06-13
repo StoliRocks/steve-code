@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import List, Optional, Dict, Set
 import mimetypes
 import logging
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+from rich.console import Console
 
 
 class FileContextManager:
@@ -28,14 +30,17 @@ class FileContextManager:
         'cargo.toml', 'go.mod', 'pom.xml', 'build.gradle', 'gemfile'
     }
     
-    def __init__(self, size_limit: int = DEFAULT_SIZE_LIMIT):
+    def __init__(self, size_limit: int = DEFAULT_SIZE_LIMIT, show_progress: bool = True):
         """Initialize the file context manager.
         
         Args:
             size_limit: Maximum file size in bytes
+            show_progress: Whether to show progress indicators
         """
         self.size_limit = size_limit
         self.logger = logging.getLogger(__name__)
+        self.console = Console()
+        self.show_progress = show_progress
     
     def read_file(self, file_path: Path) -> Optional[str]:
         """Read a file's content.
@@ -143,7 +148,7 @@ class FileContextManager:
         return results
     
     def create_context_from_files(self, file_paths: List[Path]) -> str:
-        """Create a formatted context string from multiple files.
+        """Create a formatted context string from multiple files with progress indication.
         
         Args:
             file_paths: List of file paths
@@ -151,12 +156,34 @@ class FileContextManager:
         Returns:
             Formatted context string
         """
+        if not file_paths:
+            return ""
+        
         context_parts = []
         
-        for file_path in file_paths:
-            content = self.read_file(file_path)
-            if content is not None:
-                context_parts.append(self.format_file_content(file_path, content))
+        if self.show_progress and len(file_paths) > 1:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                console=self.console,
+                transient=True,
+            ) as progress:
+                task = progress.add_task("Reading files...", total=len(file_paths))
+                
+                for file_path in file_paths:
+                    progress.update(task, description=f"Reading {file_path.name}")
+                    content = self.read_file(file_path)
+                    if content is not None:
+                        context_parts.append(self.format_file_content(file_path, content))
+                    progress.advance(task)
+        else:
+            # No progress bar for single file or when disabled
+            for file_path in file_paths:
+                content = self.read_file(file_path)
+                if content is not None:
+                    context_parts.append(self.format_file_content(file_path, content))
         
         return "\n\n".join(context_parts)
     

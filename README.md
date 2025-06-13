@@ -11,6 +11,9 @@ A self-contained AI code assistant CLI tool that mimics Claude Code's functional
 - **Conversation History**: Maintains context across interactions with save/load functionality
 - **Command-line Interface**: Both interactive and single-command modes
 - **Rich Formatting**: Syntax highlighting and markdown rendering in terminal
+- **Git Integration**: View status, diffs, logs, and create commits with AI-generated messages
+- **Automatic Retry Logic**: Handles transient AWS errors with exponential backoff
+- **Progress Indicators**: Visual feedback during file reading and API calls
 
 ## Installation
 
@@ -147,6 +150,11 @@ When in interactive mode, you can use these commands:
 - `/settings` - Show current settings
 - `/set <key> <value>` - Modify settings (temperature, max_tokens, region)
 - `/config` - Save current settings to config file
+- `/git` - Show git status
+- `/git diff` - Show unstaged changes
+- `/git diff --staged` - Show staged changes
+- `/git log` - Show recent commits
+- `/git commit` - Create commit with AI-generated message
 
 ### Command-Line Options
 
@@ -210,6 +218,16 @@ sc -i
 >>> /files src/calculator.py tests/test_calculator.py
 >>> How can I improve the test coverage for my calculator module?
 >>> /tree src  # View project structure
+```
+
+### Git Integration
+
+```bash
+sc -i
+>>> /git  # Check current status
+>>> /git diff  # Review changes
+>>> Make the error messages more descriptive
+>>> /git commit  # AI generates commit message based on changes
 ```
 
 ## Project Structure

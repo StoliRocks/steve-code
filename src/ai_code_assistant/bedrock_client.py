@@ -10,6 +10,7 @@ import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
 
 from .system_prompts import get_system_prompt, get_interactive_prompt
+from .retry_utils import retry_with_backoff
 
 
 class ModelType(Enum):
@@ -111,13 +112,14 @@ class BedrockClient:
         
         return body
     
+    @retry_with_backoff(max_retries=3, backoff_factor=2.0, max_delay=30.0)
     def send_message(
         self,
         messages: List[Message],
         system_prompt: Optional[str] = None,
         stream: bool = True
     ) -> Any:
-        """Send a message to the Claude model.
+        """Send a message to the Claude model with automatic retry logic.
         
         Args:
             messages: List of conversation messages
@@ -152,6 +154,7 @@ class BedrockClient:
             error_code = e.response['Error']['Code']
             error_message = e.response['Error']['Message']
             
+            # Non-retryable errors
             if error_code == 'AccessDeniedException':
                 raise RuntimeError(
                     f"Access denied to model {self.model_type.value}. "
@@ -160,7 +163,8 @@ class BedrockClient:
             elif error_code == 'ValidationException':
                 raise RuntimeError(f"Invalid request: {error_message}")
             else:
-                raise RuntimeError(f"AWS Bedrock error: {error_message}")
+                # Let retry logic handle other errors
+                raise
     
     def _process_stream(self, response):
         """Process streaming response from Bedrock.

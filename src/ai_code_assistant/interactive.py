@@ -14,12 +14,14 @@ from rich.markdown import Markdown
 from rich.syntax import Syntax
 from rich.panel import Panel
 from rich.text import Text
+from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from .bedrock_client import BedrockClient, ModelType, Message
 from .conversation import ConversationHistory
 from .code_extractor import CodeExtractor
 from .file_context import FileContextManager
 from .config import ConfigManager
+from .git_integration import GitIntegration, GitStatus
 
 
 class InteractiveMode:
@@ -43,6 +45,11 @@ class InteractiveMode:
         '/settings': 'Show or modify settings (use /settings <key> <value>)',
         '/set': 'Set a configuration value (temperature, max_tokens, region)',
         '/config': 'Save current settings to config file',
+        '/git': 'Show git status',
+        '/git diff': 'Show git diff of unstaged changes',
+        '/git diff --staged': 'Show git diff of staged changes',
+        '/git log': 'Show recent git commits',
+        '/git commit': 'Create a git commit with AI-generated message',
     }
     
     def __init__(
@@ -81,6 +88,13 @@ class InteractiveMode:
         
         # System prompt - use model-specific prompt for interactive mode
         self.system_prompt = self.bedrock_client.get_default_system_prompt(interactive=True)
+        
+        # Initialize git integration (may fail if not in git repo)
+        try:
+            self.git = GitIntegration()
+        except RuntimeError:
+            self.git = None
+            self.console.print("[yellow]Note: Not in a git repository. Git commands unavailable.[/yellow]")
     
     def _create_prompt_style(self) -> Style:
         """Create prompt style."""
@@ -204,6 +218,9 @@ class InteractiveMode:
         
         elif cmd == '/config':
             self._save_config()
+        
+        elif cmd.startswith('/git'):
+            self._handle_git_command(user_input)
         
         else:
             self.console.print(f"[red]Unknown command: {cmd}[/red]")
@@ -499,22 +516,31 @@ Compact Mode: [yellow]{'Enabled' if self.compact_mode else 'Disabled'}[/yellow]
             messages[-1] = Message(role="user", content=full_input)
         
         try:
-            # Show thinking indicator
-            self.console.print("[dim]Thinking...[/dim]", end="")
-            
-            # Get response from Bedrock
+            # Show thinking indicator with progress
             response_text = ""
-            for chunk in self.bedrock_client.send_message(messages, self.system_prompt):
-                response_text += chunk
-                if not self.compact_mode:
-                    self.console.print(chunk, end="")
             
             if self.compact_mode:
-                # Clear thinking indicator
-                self.console.print("\r" + " " * 20 + "\r", end="")
+                # Use progress spinner for compact mode
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    console=self.console,
+                    transient=True,
+                ) as progress:
+                    task = progress.add_task("Thinking...", total=None)
+                    
+                    for chunk in self.bedrock_client.send_message(messages, self.system_prompt):
+                        response_text += chunk
+                        progress.update(task, description=f"Generating response... ({len(response_text)} chars)")
+                
                 # Display full response
                 self._display_response(response_text)
             else:
+                # Stream directly to console in normal mode
+                self.console.print("[dim]Assistant:[/dim]")
+                for chunk in self.bedrock_client.send_message(messages, self.system_prompt):
+                    response_text += chunk
+                    self.console.print(chunk, end="")
                 self.console.print()  # New line after streaming
             
             # Add to conversation history
@@ -522,6 +548,132 @@ Compact Mode: [yellow]{'Enabled' if self.compact_mode else 'Disabled'}[/yellow]
             
         except Exception as e:
             self.console.print(f"\n[red]Error: {e}[/red]")
+    
+    def _handle_git_command(self, command: str):
+        """Handle git commands."""
+        if not self.git:
+            self.console.print("[red]Git commands not available - not in a git repository[/red]")
+            return
+        
+        parts = command.split()
+        
+        try:
+            if command == '/git' or command == '/git status':
+                # Show git status
+                status = self.git.get_status()
+                formatted_status = self.git.format_status_for_display(status)
+                self.console.print(Panel(formatted_status, title="Git Status", border_style="blue"))
+            
+            elif command == '/git diff':
+                # Show unstaged diff
+                diff = self.git.get_diff(staged=False)
+                if diff:
+                    syntax = Syntax(diff, "diff", theme="monokai", line_numbers=True)
+                    self.console.print(Panel(syntax, title="Git Diff (Unstaged)", border_style="yellow"))
+                else:
+                    self.console.print("[yellow]No unstaged changes[/yellow]")
+            
+            elif command == '/git diff --staged':
+                # Show staged diff
+                diff = self.git.get_diff(staged=True)
+                if diff:
+                    syntax = Syntax(diff, "diff", theme="monokai", line_numbers=True)
+                    self.console.print(Panel(syntax, title="Git Diff (Staged)", border_style="green"))
+                else:
+                    self.console.print("[yellow]No staged changes[/yellow]")
+            
+            elif command == '/git log':
+                # Show git log
+                log = self.git.get_log(limit=10, oneline=True)
+                self.console.print(Panel(log, title="Recent Commits", border_style="blue"))
+            
+            elif command == '/git commit':
+                # Create commit with AI-generated message
+                self._create_git_commit()
+            
+            else:
+                self.console.print(f"[red]Unknown git command: {command}[/red]")
+                self.console.print("[yellow]Available: /git, /git diff, /git diff --staged, /git log, /git commit[/yellow]")
+        
+        except Exception as e:
+            self.console.print(f"[red]Git error: {e}[/red]")
+    
+    def _create_git_commit(self):
+        """Create a git commit with AI-generated message."""
+        try:
+            # Get current status
+            status = self.git.get_status()
+            
+            if not status.staged and not status.modified:
+                self.console.print("[yellow]No changes to commit[/yellow]")
+                return
+            
+            # If no staged changes, ask to stage all
+            if not status.staged and status.modified:
+                self.console.print(f"[yellow]No staged changes. You have {len(status.modified)} modified files.[/yellow]")
+                response = self.session.prompt("Stage all modified files? (y/n): ")
+                if response.lower() == 'y':
+                    self.git.stage_files(status.modified)
+                    status = self.git.get_status()  # Refresh status
+                else:
+                    self.console.print("[yellow]Commit cancelled[/yellow]")
+                    return
+            
+            # Get diff for commit message generation
+            diff = self.git.get_diff(staged=True)
+            if not diff:
+                self.console.print("[yellow]No staged changes to commit[/yellow]")
+                return
+            
+            # Show what will be committed
+            self.console.print("\n[bold]Files to be committed:[/bold]")
+            for file in status.staged[:10]:
+                self.console.print(f"  • {file}")
+            if len(status.staged) > 10:
+                self.console.print(f"  ... and {len(status.staged) - 10} more")
+            
+            # Generate commit message using AI
+            self.console.print("\n[dim]Generating commit message...[/dim]")
+            
+            prompt = f"""Based on the following git diff, generate a concise and descriptive commit message.
+Follow conventional commit format if possible (feat:, fix:, docs:, etc).
+
+Git diff:
+```diff
+{diff[:3000]}  # Limit diff size
+```
+
+Provide ONLY the commit message, no explanation."""
+            
+            messages = [Message(role="user", content=prompt)]
+            
+            commit_message = ""
+            for chunk in self.bedrock_client.send_message(messages, stream=True):
+                commit_message += chunk
+            
+            commit_message = commit_message.strip()
+            
+            # Show proposed message
+            self.console.print(f"\n[green]Proposed commit message:[/green]")
+            self.console.print(Panel(commit_message, border_style="green"))
+            
+            # Ask for confirmation or edit
+            response = self.session.prompt("\nUse this message? (y)es, (e)dit, (c)ancel: ")
+            
+            if response.lower() == 'e':
+                # Allow editing
+                commit_message = self.session.prompt("Commit message: ", default=commit_message)
+            elif response.lower() != 'y':
+                self.console.print("[yellow]Commit cancelled[/yellow]")
+                return
+            
+            # Create the commit
+            commit_hash = self.git.commit(commit_message)
+            self.console.print(f"\n[green]✓ Created commit: {commit_hash[:8]}[/green]")
+            self.console.print(f"[dim]Message: {commit_message}[/dim]")
+            
+        except Exception as e:
+            self.console.print(f"[red]Error creating commit: {e}[/red]")
     
     def _display_response(self, response: str):
         """Display response with proper formatting."""
