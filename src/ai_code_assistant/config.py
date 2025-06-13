@@ -13,7 +13,7 @@ class Config:
     model: str = "sonnet-4"
     region: str = "us-east-1"
     temperature: float = 0.7
-    max_tokens: int = 4096
+    max_tokens: int = 128000
     compact_mode: bool = False
     history_dir: Optional[str] = None
     

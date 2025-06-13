@@ -160,15 +160,19 @@ def main(
     if temperature is None:
         temperature = config_manager.get('temperature', 0.7)
     if max_tokens is None:
-        max_tokens = config_manager.get('max_tokens', 4096)
+        max_tokens = config_manager.get('max_tokens', 128000)
     if not compact:
         compact = config_manager.get('compact_mode', False)
     
     # Map model names
     model_map = {
-        'sonnet-4': ModelType.CLAUDE_4_SONNET,
+        'sonnet-4': ModelType.CLAUDE_SONNET_4,
         'sonnet-3.7': ModelType.CLAUDE_3_7_SONNET,
-        'opus-4': ModelType.CLAUDE_4_OPUS,
+        'opus-4': ModelType.CLAUDE_OPUS_4,
+        # Legacy aliases
+        'sonnet-3.5-v2': ModelType.CLAUDE_3_5_SONNET_V2,
+        'sonnet-3.5': ModelType.CLAUDE_3_5_SONNET,
+        'opus-3': ModelType.CLAUDE_3_OPUS,
     }
     
     try:
@@ -208,14 +212,17 @@ def main(
         
         response_text = ""
         
+        # Get appropriate system prompt for single command mode
+        system_prompt = bedrock_client.get_default_system_prompt(interactive=False)
+        
         if no_stream:
             # Non-streaming response
-            response = bedrock_client.send_message(messages, stream=False)
+            response = bedrock_client.send_message(messages, system_prompt=system_prompt, stream=False)
             response_text = response.get('content', [{}])[0].get('text', '')
             console.print(response_text)
         else:
             # Streaming response
-            for chunk in bedrock_client.send_message(messages, stream=True):
+            for chunk in bedrock_client.send_message(messages, system_prompt=system_prompt, stream=True):
                 response_text += chunk
                 if not compact:
                     console.print(chunk, end="")

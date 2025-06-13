@@ -62,7 +62,7 @@ Create a `.env` file in your project directory (optional):
 AWS_DEFAULT_REGION=us-east-1
 AI_ASSISTANT_MODEL=sonnet-4
 AI_ASSISTANT_TEMPERATURE=0.7
-AI_ASSISTANT_MAX_TOKENS=4096
+AI_ASSISTANT_MAX_TOKENS=128000
 AI_ASSISTANT_COMPACT_MODE=false
 ```
 
@@ -155,7 +155,7 @@ Options:
   -m, --model [sonnet-4|sonnet-3.7|opus-4]  Claude model to use [default: sonnet-4]
   -r, --region TEXT                          AWS region for Bedrock [default: us-east-1]
   -t, --temperature FLOAT                    Model temperature (0-1) [default: 0.7]
-  --max-tokens INTEGER                       Maximum tokens in response [default: 4096]
+  --max-tokens INTEGER                       Maximum tokens in response [default: 128000]
   -i, --interactive                          Start in interactive mode
   -f, --file PATH                           Include file(s) in context (multiple allowed)
   -c, --compact                             Use compact output mode
@@ -235,9 +235,27 @@ steve-code/
 
 ## Supported Models
 
-- **Claude 4 Sonnet** (`sonnet-4`): Latest and most capable model
-- **Claude 3.7 Sonnet** (`sonnet-3.7`): Previous generation Sonnet
-- **Claude 4 Opus** (`opus-4`): Most powerful model for complex tasks
+### Current Generation
+- **Claude Sonnet 4** (`sonnet-4`): Latest Sonnet model, optimized for coding tasks
+- **Claude 3.7 Sonnet** (`sonnet-3.7`): Enhanced Sonnet with improved capabilities
+- **Claude Opus 4** (`opus-4`): Most powerful model for complex tasks
+
+### Legacy Models
+- **Claude 3.5 Sonnet v2** (`sonnet-3.5-v2`): Previous Sonnet version
+- **Claude 3.5 Sonnet** (`sonnet-3.5`): Earlier Sonnet release
+- **Claude 3 Opus** (`opus-3`): Previous Opus generation
+
+All models use AWS Bedrock's load-balanced endpoints with the `.us.` prefix for optimal performance across regions.
+
+### Token Limits
+
+Steve Code defaults to 128,000 tokens (128k) for maximum response length, which is supported by all current Claude models. This generous limit ensures complete responses for complex tasks like:
+- Large code generation projects
+- Comprehensive code reviews
+- Detailed architectural documentation
+- Multi-file refactoring explanations
+
+You can adjust the token limit using `--max-tokens` or by setting it in interactive mode with `/set max_tokens <value>`.
 
 ## Troubleshooting
 

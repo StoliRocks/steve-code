@@ -9,12 +9,33 @@ from enum import Enum
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
 
+from .system_prompts import get_system_prompt, get_interactive_prompt
+
 
 class ModelType(Enum):
     """Supported Claude models."""
-    CLAUDE_4_SONNET = "anthropic.claude-3-5-sonnet-20241022-v2:0"
-    CLAUDE_3_7_SONNET = "anthropic.claude-3-5-sonnet-20240620-v1:0"
-    CLAUDE_4_OPUS = "anthropic.claude-3-opus-20240229-v1:0"
+    # Current generation models with .us. prefix for load balancing
+    CLAUDE_SONNET_4 = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+    CLAUDE_OPUS_4 = "us.anthropic.claude-opus-4-20250514-v1:0"
+    CLAUDE_3_7_SONNET = "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
+    
+    # Legacy model names (kept for backward compatibility)
+    CLAUDE_3_5_SONNET_V2 = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+    CLAUDE_3_5_SONNET = "us.anthropic.claude-3-5-sonnet-20240620-v1:0"
+    CLAUDE_3_OPUS = "us.anthropic.claude-3-opus-20240229-v1:0"
+    
+    @property
+    def short_name(self) -> str:
+        """Get the short name for system prompt lookup."""
+        mapping = {
+            self.CLAUDE_SONNET_4: "sonnet-4",
+            self.CLAUDE_OPUS_4: "opus-4",
+            self.CLAUDE_3_7_SONNET: "sonnet-3.7",
+            self.CLAUDE_3_5_SONNET_V2: "sonnet-3.5-v2",
+            self.CLAUDE_3_5_SONNET: "sonnet-3.5",
+            self.CLAUDE_3_OPUS: "opus-3"
+        }
+        return mapping.get(self, "sonnet-4")
 
 
 @dataclass
@@ -29,9 +50,9 @@ class BedrockClient:
     
     def __init__(
         self,
-        model_type: ModelType = ModelType.CLAUDE_4_SONNET,
+        model_type: ModelType = ModelType.CLAUDE_SONNET_4,
         region_name: str = "us-east-1",
-        max_tokens: int = 4096,
+        max_tokens: int = 128000,
         temperature: float = 0.7
     ):
         """Initialize the Bedrock client.
@@ -182,3 +203,17 @@ class BedrockClient:
         """
         self.model_type = model_type
         self.logger.info(f"Switched to model: {model_type.value}")
+    
+    def get_default_system_prompt(self, interactive: bool = False) -> str:
+        """Get the default system prompt for the current model.
+        
+        Args:
+            interactive: Whether to use interactive mode prompt
+            
+        Returns:
+            The appropriate system prompt
+        """
+        model_name = self.model_type.short_name
+        if interactive:
+            return get_interactive_prompt(model_name)
+        return get_system_prompt(model_name)

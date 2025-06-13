@@ -30,6 +30,7 @@ pyvenv.cfg
 .history/
 conversation_history/
 *.json.backup
+CLAUDE.md
 
 # OS
 .DS_Store

@@ -79,12 +79,8 @@ class InteractiveMode:
             style=self._create_prompt_style()
         )
         
-        # System prompt
-        self.system_prompt = (
-            "You are an AI coding assistant. You help with programming tasks, "
-            "code review, debugging, and technical questions. You can analyze "
-            "code, suggest improvements, and explain complex concepts clearly."
-        )
+        # System prompt - use model-specific prompt for interactive mode
+        self.system_prompt = self.bedrock_client.get_default_system_prompt(interactive=True)
     
     def _create_prompt_style(self) -> Style:
         """Create prompt style."""
@@ -281,11 +277,11 @@ Compact Mode: [yellow]{'Enabled' if self.compact_mode else 'Disabled'}[/yellow]
             
             elif key == "max_tokens":
                 tokens = int(value)
-                if 1 <= tokens <= 100000:
+                if 1 <= tokens <= 128000:
                     self.bedrock_client.max_tokens = tokens
                     self.console.print(f"[green]Max tokens set to {tokens}[/green]")
                 else:
-                    self.console.print("[red]Max tokens must be between 1 and 100000[/red]")
+                    self.console.print("[red]Max tokens must be between 1 and 128000[/red]")
             
             elif key == "region":
                 # Update the bedrock client's region
@@ -309,9 +305,12 @@ Compact Mode: [yellow]{'Enabled' if self.compact_mode else 'Disabled'}[/yellow]
         """Save current settings to configuration file."""
         # Map model type to string
         model_map_reverse = {
-            ModelType.CLAUDE_4_SONNET: 'sonnet-4',
+            ModelType.CLAUDE_SONNET_4: 'sonnet-4',
             ModelType.CLAUDE_3_7_SONNET: 'sonnet-3.7',
-            ModelType.CLAUDE_4_OPUS: 'opus-4',
+            ModelType.CLAUDE_OPUS_4: 'opus-4',
+            ModelType.CLAUDE_3_5_SONNET_V2: 'sonnet-3.5-v2',
+            ModelType.CLAUDE_3_5_SONNET: 'sonnet-3.5',
+            ModelType.CLAUDE_3_OPUS: 'opus-3',
         }
         
         # Update config manager with current settings
@@ -330,18 +329,25 @@ Compact Mode: [yellow]{'Enabled' if self.compact_mode else 'Disabled'}[/yellow]
     def _switch_model(self, model_name: str):
         """Switch to a different model."""
         model_map = {
-            'sonnet-4': ModelType.CLAUDE_4_SONNET,
+            'sonnet-4': ModelType.CLAUDE_SONNET_4,
             'sonnet-3.7': ModelType.CLAUDE_3_7_SONNET,
-            'opus-4': ModelType.CLAUDE_4_OPUS,
+            'opus-4': ModelType.CLAUDE_OPUS_4,
+            # Legacy aliases
+            'sonnet-3.5-v2': ModelType.CLAUDE_3_5_SONNET_V2,
+            'sonnet-3.5': ModelType.CLAUDE_3_5_SONNET,
+            'opus-3': ModelType.CLAUDE_3_OPUS,
         }
         
         if not model_name:
             self.console.print("[yellow]Available models: sonnet-4, sonnet-3.7, opus-4[/yellow]")
+            self.console.print("[dim]Legacy models: sonnet-3.5-v2, sonnet-3.5, opus-3[/dim]")
             return
         
         model_type = model_map.get(model_name.lower())
         if model_type:
             self.bedrock_client.switch_model(model_type)
+            # Update system prompt for new model
+            self.system_prompt = self.bedrock_client.get_default_system_prompt(interactive=True)
             self.console.print(f"[green]Switched to {model_type.name}[/green]")
         else:
             self.console.print(f"[red]Unknown model: {model_name}[/red]")
