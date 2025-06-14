@@ -812,6 +812,12 @@ Example response:
                     self.console.print("[green]Planning to:[/green]")
                     for action in intent_analysis['suggested_actions']:
                         self.console.print(f"  • {action}")
+                
+                # Debug: check if we have project info
+                if not self.project_analyzer:
+                    self.console.print("[yellow]Warning: Project analyzer not initialized[/yellow]")
+                elif not self.project_info:
+                    self.console.print("[yellow]Warning: Project info not available[/yellow]")
         
         # Auto-detect content in the input
         detections = self.auto_detector.extract_all(user_input)
@@ -835,61 +841,42 @@ Example response:
             # Fallback: still auto-discover if enabled
             should_discover = self.auto_discover_files
         
-        if should_discover:
-            # Only auto-discover if no files were manually added
-            
-            # First, use project analyzer for intelligent suggestions
-            if self.project_analyzer:
-                with self.console.status("[dim]Discovering relevant files for analysis...[/dim]", spinner="dots"):
-                    # Try to find files based on the query
-                    suggested_files = self.project_analyzer.suggest_files_for_query(user_input, max_suggestions=10)
+        if should_discover and not self.context_files:  # Don't override manual files
+            with self.console.status("[dim]Discovering relevant files for analysis...[/dim]", spinner="dots"):
+                
+                # First, try project analyzer if available
+                if self.project_analyzer:
+                    discovered_files = self.project_analyzer.suggest_files_for_query(user_input, max_suggestions=10)
+                
+                # If we need code analysis and don't have files yet, get them!
+                if intent_analysis and intent_analysis.get('requires_code_analysis') and not discovered_files:
+                    # Try to find main entry points
+                    if self.project_info and self.project_info.main_directories:
+                        for main_dir in self.project_info.main_directories[:2]:
+                            patterns = ['main.*', 'app.*', 'index.*', 'cli.*', '__main__.*']
+                            for pattern in patterns:
+                                for file_path in main_dir.glob(pattern):
+                                    if file_path.is_file() and file_path.suffix in ['.py', '.js', '.ts', '.java', '.go']:
+                                        discovered_files.append(file_path)
+                                        if len(discovered_files) >= 5:
+                                            break
+                            if discovered_files:
+                                break
                     
-                    # If intent analysis says we need code analysis, ALWAYS get files
-                    if intent_analysis and intent_analysis.get('requires_code_analysis'):
-                        # Add main entry points from project
-                        if self.project_info and self.project_info.main_directories:
-                            for main_dir in self.project_info.main_directories[:2]:
-                                patterns = ['main.*', 'app.*', 'index.*', '__main__.*']
-                                for pattern in patterns:
-                                    for file_path in main_dir.glob(pattern):
-                                        if file_path.is_file() and file_path.suffix in ['.py', '.js', '.ts', '.java', '.go']:
-                                            suggested_files.append(file_path)
-                                            if len(suggested_files) >= 5:
-                                                break
-                        
-                        # ALWAYS ensure we have files when code analysis is required
-                        if not suggested_files and self.project_info and intent_analysis and intent_analysis.get('requires_code_analysis'):
-                            extensions = {
-                                'python': ['.py'],
-                                'javascript': ['.js', '.ts'],
-                                'java': ['.java'],
-                                'go': ['.go'],
-                                'rust': ['.rs'],
-                                'ruby': ['.rb']
-                            }.get(self.project_info.project_type, ['.py', '.js'])
-                            
-                            # Get any code files from main directories
-                            for ext in extensions:
-                                for main_dir in self.project_info.main_directories[:2]:
-                                    for file_path in main_dir.rglob(f'*{ext}'):
-                                        if file_path.is_file() and not any(ignore in str(file_path) for ignore in ['test', '__pycache__', 'node_modules']):
-                                            suggested_files.append(file_path)
-                                            if len(suggested_files) >= 5:
-                                                break
-                                    if suggested_files:
-                                        break
-                    
-                    discovered_files = suggested_files
-                    
-                    # If intent requires code analysis but we have no files, this is a problem
-                    if not discovered_files and intent_analysis and intent_analysis.get('requires_code_analysis'):
-                        self.console.print("[yellow]Warning: No files found for code analysis. Trying broader search...[/yellow]")
-                        # Just grab ANY Python files as a last resort
-                        for file in self.root_path.rglob('*.py'):
-                            if file.is_file() and 'test' not in str(file).lower() and '__pycache__' not in str(file):
+                    # Still no files? Get ANY code files
+                    if not discovered_files:
+                        self.console.print("[yellow]No main files found, searching for any code files...[/yellow]")
+                        # Just grab first few Python files
+                        for file in Path(self.root_path).rglob('*.py'):
+                            if file.is_file() and '__pycache__' not in str(file) and 'venv' not in str(file):
                                 discovered_files.append(file)
-                                if len(discovered_files) >= 3:
+                                if len(discovered_files) >= 5:
                                     break
+                        
+                        # If STILL no files, something is wrong
+                        if not discovered_files:
+                            self.console.print("[red]ERROR: No code files found in directory![/red]")
+                            self.console.print(f"[red]Working directory: {self.root_path}[/red]")
             
             # Fallback to smart context if available
             elif self.smart_context:
