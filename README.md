@@ -47,6 +47,9 @@ pipx ensurepath
 git clone https://github.com/StoliRocks/steve-code.git
 cd steve-code
 pipx install -e .
+
+# Or with screenshot support
+pipx install -e ".[screenshot]"
 ```
 
 #### Option 2: Using Virtual Environment
@@ -91,11 +94,34 @@ pip install -e . --user --break-system-packages
 # Using pipx (recommended)
 pipx install git+https://github.com/StoliRocks/steve-code.git
 
+# With screenshot support
+pipx install "steve-code[screenshot] @ git+https://github.com/StoliRocks/steve-code.git"
+
 # Using pip with venv
 python3 -m venv steve-env
 source steve-env/bin/activate
 pip install git+https://github.com/StoliRocks/steve-code.git
 ```
+
+### Optional Dependencies
+
+Steve Code has optional features that require additional system packages:
+
+#### Screenshot Support (Linux)
+For screenshot capture functionality on Linux, install tkinter:
+
+```bash
+# Debian/Ubuntu
+sudo apt-get install python3-tk python3-dev
+
+# Fedora
+sudo dnf install python3-tkinter
+
+# Arch Linux
+sudo pacman -S tk
+```
+
+**Note**: Screenshot functionality is optional. Steve Code will work perfectly without it, and the `/screenshot` command will simply be unavailable.
 
 ## Configuration
 

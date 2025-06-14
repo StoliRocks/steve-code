@@ -34,10 +34,13 @@ setup(
         "beautifulsoup4>=4.10.0",
         "requests>=2.25.0",
         "Pillow>=9.0.0",
-        "pyautogui>=0.9.50",
         "tiktoken>=0.5.0",
         "packaging>=21.0",
     ],
+    extras_require={
+        "screenshot": ["pyautogui>=0.9.50"],
+        "all": ["pyautogui>=0.9.50"],
+    },
     entry_points={
         "console_scripts": [
             "steve-code=ai_code_assistant.cli:main",

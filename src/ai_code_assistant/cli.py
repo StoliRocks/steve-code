@@ -2,9 +2,14 @@
 
 import os
 import sys
+import warnings
 from pathlib import Path
 from typing import Optional, List
 import logging
+
+# Suppress tkinter warnings from pyautogui
+warnings.filterwarnings("ignore", message=".*tkinter.*")
+warnings.filterwarnings("ignore", category=UserWarning, module="pyautogui")
 
 import click
 from dotenv import load_dotenv

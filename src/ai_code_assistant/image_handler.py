@@ -164,10 +164,17 @@ class ScreenshotCapture:
         """Check if screenshot dependencies are available."""
         self.has_pyautogui = False
         try:
-            import pyautogui
+            # Suppress the tkinter warning on import
+            import warnings
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message=".*tkinter.*")
+                import pyautogui
             self.has_pyautogui = True
         except ImportError:
-            self.logger.info("pyautogui not installed - screenshot capture unavailable")
+            self.logger.debug("pyautogui not installed - screenshot capture unavailable")
+        except Exception as e:
+            # Handle case where pyautogui is installed but tkinter is not
+            self.logger.debug(f"Screenshot capture unavailable: {e}")
     
     def capture_screenshot(self, output_path: Optional[Path] = None) -> Optional[Path]:
         """Capture a screenshot.
