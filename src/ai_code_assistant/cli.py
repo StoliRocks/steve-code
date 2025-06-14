@@ -19,23 +19,40 @@ import contextlib
 stderr = sys.stderr
 sys.stderr = io.StringIO()
 
+print("DEBUG: Starting imports...")
+
 from pathlib import Path
+print("DEBUG: Imported Path")
 from typing import Optional, List
+print("DEBUG: Imported typing")
 import logging
+print("DEBUG: Imported logging")
 
 import click
+print("DEBUG: Imported click")
 from dotenv import load_dotenv
+print("DEBUG: Imported dotenv")
 from rich.console import Console
+print("DEBUG: Imported Console")
 from rich.logging import RichHandler
+print("DEBUG: Imported RichHandler")
 
 from . import __version__
+print("DEBUG: Imported __version__")
 from .bedrock_client import BedrockClient, ModelType, Message
+print("DEBUG: Imported bedrock_client")
 from .interactive import InteractiveMode
+print("DEBUG: Imported InteractiveMode")
 from .conversation import ConversationHistory
+print("DEBUG: Imported ConversationHistory")
 from .code_extractor import CodeExtractor
+print("DEBUG: Imported CodeExtractor")
 from .file_context import FileContextManager
+print("DEBUG: Imported FileContextManager")
 from .config import ConfigManager
+print("DEBUG: Imported ConfigManager")
 from .update_checker import UpdateChecker, get_update_message
+print("DEBUG: Imported UpdateChecker")
 
 # Restore stderr after imports
 sys.stderr = stderr
