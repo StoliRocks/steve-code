@@ -18,6 +18,7 @@ from .conversation import ConversationHistory
 from .code_extractor import CodeExtractor
 from .file_context import FileContextManager
 from .config import ConfigManager
+from .update_checker import UpdateChecker, get_update_message
 
 
 # Load environment variables
@@ -99,6 +100,16 @@ console = Console()
     is_flag=True,
     help='Show version and exit'
 )
+@click.option(
+    '--update',
+    is_flag=True,
+    help='Check for updates and install if available'
+)
+@click.option(
+    '--check-update',
+    is_flag=True,
+    help='Check for updates without installing'
+)
 @click.argument('prompt', nargs=-1)
 def main(
     model: str,
@@ -113,6 +124,8 @@ def main(
     no_stream: bool,
     verbose: bool,
     version: bool,
+    update: bool,
+    check_update: bool,
     prompt: tuple
 ):
     """Steve Code - A self-contained AI code assistant using AWS Bedrock.
@@ -133,6 +146,28 @@ def main(
     if version:
         console.print(f"Steve Code v{__version__}")
         return
+    
+    if check_update:
+        console.print("Checking for updates...")
+        checker = UpdateChecker()
+        update_info = checker.check_for_update(force=True)
+        if update_info:
+            latest_version, url = update_info
+            console.print(f"[green]Update available: v{latest_version}[/green]")
+            console.print(f"Current version: v{__version__}")
+            console.print(f"Release: {url}")
+            console.print("\nTo update, run: [yellow]steve-code --update[/yellow]")
+        else:
+            console.print(f"[green]You're up to date! (v{__version__})[/green]")
+        return
+    
+    if update:
+        checker = UpdateChecker()
+        if checker.auto_update():
+            return
+        else:
+            console.print("[yellow]No updates available[/yellow]")
+            return
     
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -186,6 +221,12 @@ def main(
         
         # Interactive mode
         if interactive or not prompt:
+            # Check for updates in background (non-blocking)
+            update_msg = get_update_message()
+            if update_msg:
+                console.print(update_msg)
+                console.print()
+            
             interactive_mode = InteractiveMode(
                 bedrock_client=bedrock_client,
                 compact_mode=compact

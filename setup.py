@@ -5,12 +5,12 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="steve-code",
-    version="0.1.0",
+    version="0.1.1",
     author="Steve Code Contributors",
     description="A self-contained AI code assistant CLI tool using AWS Bedrock",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/steve-code",
+    url="https://github.com/StoliRocks/steve-code",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     classifiers=[
@@ -31,6 +31,12 @@ setup(
         "rich>=13.7.0",
         "click>=8.1.7",
         "python-dotenv>=1.0.0",
+        "beautifulsoup4>=4.10.0",
+        "requests>=2.25.0",
+        "Pillow>=9.0.0",
+        "pyautogui>=0.9.50",
+        "tiktoken>=0.5.0",
+        "packaging>=21.0",
     ],
     entry_points={
         "console_scripts": [

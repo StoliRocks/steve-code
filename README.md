@@ -23,6 +23,7 @@ A self-contained AI code assistant CLI tool that mimics Claude Code's functional
 - **Auto-Detection**: Automatically fetches URLs and detects images in your prompts
 - **Context Management**: Track token usage and auto-compact when nearing limits
 - **Smart Prompts**: Shows remaining tokens when context usage is high
+- **Auto-Update**: Check for updates and install new versions from the command line
 
 ## Installation
 
@@ -184,6 +185,8 @@ Options:
   --no-stream                               Disable response streaming
   -v, --verbose                             Enable verbose logging
   --version                                 Show version and exit
+  --update                                  Check for updates and install if available
+  --check-update                            Check for updates without installing
   --help                                    Show this message and exit
 ```
 
@@ -329,7 +332,9 @@ steve-code/
 │       ├── image_handler.py     # Image/screenshot support
 │       ├── smart_context.py     # Smart file analysis
 │       ├── auto_detection.py    # Auto-detect URLs/images
-│       └── context_manager.py   # Token tracking & compaction
+│       ├── context_manager.py   # Token tracking & compaction
+│       ├── update_checker.py    # Version update checking
+│       └── version.py           # Version information
 ├── tests/                      # Unit tests
 ├── requirements.txt            # Python dependencies
 ├── setup.py                    # Package setup
@@ -383,6 +388,20 @@ If you encounter encoding errors with files:
 1. Ensure files are saved in UTF-8 encoding
 2. The tool attempts multiple encodings automatically
 3. Binary files are automatically excluded
+
+## Updating
+
+Steve Code can check for and install updates automatically:
+
+```bash
+# Check if updates are available
+sc --check-update
+
+# Update to the latest version
+sc --update
+```
+
+Updates are checked automatically when starting interactive mode. The tool will notify you if a new version is available.
 
 ## Contributing
 
