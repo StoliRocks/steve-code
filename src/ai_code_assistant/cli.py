@@ -1,5 +1,7 @@
 """Command-line interface for AI Code Assistant."""
 
+print("DEBUG: Top of cli.py")  # Very first thing
+
 import os
 import sys
 import warnings
