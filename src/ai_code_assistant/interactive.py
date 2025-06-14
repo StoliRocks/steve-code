@@ -749,9 +749,26 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
                     # Try to find files based on the query
                     suggested_files = self.project_analyzer.suggest_files_for_query(user_input, max_suggestions=10)
                     
-                    # If general code review query, add main files
-                    review_keywords = ['review', 'improve', 'better', 'analyze', 'optimize', 'refactor', 'code quality']
-                    if any(keyword in user_input.lower() for keyword in review_keywords) and not suggested_files:
+                    # Check if this is a code-related query that should trigger analysis
+                    code_intent_keywords = [
+                        'recommendation', 'recommend', 'suggestion', 'suggest', 'advice',
+                        'review', 'improve', 'better', 'analyze', 'optimize', 'refactor', 
+                        'code quality', 'feedback', 'help', 'application', 'app', 'project',
+                        'code', 'program', 'software', 'system', 'architecture', 'design',
+                        'performance', 'security', 'best practice', 'issue', 'problem',
+                        'enhance', 'fix', 'debug', 'test', 'structure'
+                    ]
+                    
+                    # Also check for possessive pronouns that indicate local context
+                    local_context_indicators = ['my', 'our', 'this', 'the']
+                    
+                    query_lower = user_input.lower()
+                    has_code_intent = any(keyword in query_lower for keyword in code_intent_keywords)
+                    has_local_context = any(indicator in query_lower for indicator in local_context_indicators)
+                    
+                    # If the query seems code-related and refers to local context, always analyze
+                    # Also, if user mentions "my" anything, assume they want local code analysis
+                    if (has_code_intent and has_local_context) or (has_code_intent and not suggested_files) or ('my ' in query_lower):
                         # Add main entry points from project
                         if self.project_info and self.project_info.main_directories:
                             for main_dir in self.project_info.main_directories[:2]:
@@ -762,6 +779,28 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
                                             suggested_files.append(file_path)
                                             if len(suggested_files) >= 5:
                                                 break
+                        
+                        # If we still don't have files, just grab some Python/JS files from the project
+                        if not suggested_files and self.project_info:
+                            extensions = {
+                                'python': ['.py'],
+                                'javascript': ['.js', '.ts'],
+                                'java': ['.java'],
+                                'go': ['.go'],
+                                'rust': ['.rs'],
+                                'ruby': ['.rb']
+                            }.get(self.project_info.project_type, ['.py', '.js'])
+                            
+                            # Get any code files from main directories
+                            for ext in extensions:
+                                for main_dir in self.project_info.main_directories[:2]:
+                                    for file_path in main_dir.rglob(f'*{ext}'):
+                                        if file_path.is_file() and not any(ignore in str(file_path) for ignore in ['test', '__pycache__', 'node_modules']):
+                                            suggested_files.append(file_path)
+                                            if len(suggested_files) >= 5:
+                                                break
+                                    if suggested_files:
+                                        break
                     
                     discovered_files = suggested_files
             
@@ -771,8 +810,13 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
                     discovered_files = self.smart_context.get_relevant_files(user_input, max_files=10)
             
             if discovered_files:
-                # Just show a brief summary
-                self.console.print(f"[dim]Auto-discovered {len(discovered_files)} relevant files[/dim]")
+                # Show what files were discovered
+                self.console.print(f"[green]Auto-discovered {len(discovered_files)} relevant files:[/green]")
+                for file in discovered_files[:5]:
+                    rel_path = file.relative_to(self.root_path) if hasattr(file, 'relative_to') else file
+                    self.console.print(f"  • {rel_path}")
+                if len(discovered_files) > 5:
+                    self.console.print(f"  ... and {len(discovered_files) - 5} more")
         
         # Add file context (manual files take precedence over discovered)
         files_to_include = self.context_files if self.context_files else discovered_files
@@ -1601,7 +1645,15 @@ Provide ONLY the commit message, no explanation."""
         base_prompt = self.bedrock_client.get_default_system_prompt(interactive=True)
         
         # Add project-specific context
-        project_context = f"""\n\nYou are operating in a {self.project_info.project_type} project.\n{self.project_summary}\n\nImportant: When the user asks about code, always assume they are referring to the code in the current directory unless they specify otherwise. \nProactively use the /files command or analyze files in the project directories to provide concrete, specific answers about their code.\nWhen asked to review, improve, or analyze code without specific file paths, automatically discover and analyze relevant files from the project."""
+        project_context = f"""\n\nYou are operating in a {self.project_info.project_type} project.\n{self.project_summary}\n\nCRITICAL INSTRUCTIONS:
+1. When the user asks ANYTHING about "my" application, code, project, or system - they are ALWAYS referring to the code in the current directory
+2. When files are included in the context, ALWAYS analyze them thoroughly and provide specific, actionable recommendations
+3. NEVER ask for clarification about what application they mean - assume it's the local project
+4. Be proactive: if the user asks for recommendations, suggestions, or help - immediately analyze the included files and provide concrete feedback
+5. Focus on actual code issues you can see in the files, not generic advice
+6. If no files are included but the query is about code, tell the user you'll analyze their files and suggest using /files or enabling auto-discovery
+
+Remember: The user has already provided their code context. They want specific analysis of THEIR code, not generic programming advice."""
         
         # Update system prompt
         self.system_prompt = base_prompt + project_context
