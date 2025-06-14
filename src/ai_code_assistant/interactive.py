@@ -378,8 +378,8 @@ class InteractiveMode:
                     self._process_message(user_input)
                     
                 except KeyboardInterrupt:
-                self.console.print("\n[yellow]Use /exit to quit[/yellow]")
-                continue
+                    self.console.print("\n[yellow]Use /exit to quit[/yellow]")
+                    continue
             except EOFError:
                 break
             except Exception as e:
