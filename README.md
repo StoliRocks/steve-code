@@ -14,6 +14,10 @@ A self-contained AI code assistant CLI tool that mimics Claude Code's functional
 - **Git Integration**: View status, diffs, logs, and create commits with AI-generated messages
 - **Automatic Retry Logic**: Handles transient AWS errors with exponential backoff
 - **Progress Indicators**: Visual feedback during file reading and API calls
+- **Smart File Context**: Automatically includes related files (imports, tests, configs)
+- **Web Search**: Search the web for current information and documentation
+- **Image/Screenshot Support**: Analyze images, screenshots, and visual content
+- **Path Autocomplete**: Tab completion for file paths and commands
 
 ## Installation
 
@@ -155,6 +159,9 @@ When in interactive mode, you can use these commands:
 - `/git diff --staged` - Show staged changes
 - `/git log` - Show recent commits
 - `/git commit` - Create commit with AI-generated message
+- `/search <query>` - Search the web for current information
+- `/screenshot` - Take a screenshot for analysis
+- `/image <path>` - Add image files for visual analysis
 
 ### Command-Line Options
 
@@ -228,6 +235,35 @@ sc -i
 >>> /git diff  # Review changes
 >>> Make the error messages more descriptive
 >>> /git commit  # AI generates commit message based on changes
+```
+
+### Web Search
+
+```bash
+sc -i
+>>> /search python async best practices
+>>> How do I implement the rate limiting pattern mentioned in result 2?
+```
+
+### Visual Analysis
+
+```bash
+sc -i
+>>> /screenshot  # Capture current screen
+>>> What's wrong with this error dialog?
+
+>>> /image mockup.png screenshot.png
+>>> Create HTML/CSS to match this design
+```
+
+### Smart File Context
+
+When you include a file, Steve Code automatically includes related files:
+
+```bash
+sc -i
+>>> /files src/main.py  # Also includes imports, tests, and config files
+>>> Review this code and its dependencies
 ```
 
 ## Project Structure

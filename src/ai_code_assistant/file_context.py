@@ -8,6 +8,8 @@ import logging
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 from rich.console import Console
 
+from .smart_context import SmartContextManager
+
 
 class FileContextManager:
     """Manages file context for AI prompts."""
@@ -30,17 +32,21 @@ class FileContextManager:
         'cargo.toml', 'go.mod', 'pom.xml', 'build.gradle', 'gemfile'
     }
     
-    def __init__(self, size_limit: int = DEFAULT_SIZE_LIMIT, show_progress: bool = True):
+    def __init__(self, size_limit: int = DEFAULT_SIZE_LIMIT, show_progress: bool = True, 
+                 use_smart_context: bool = True):
         """Initialize the file context manager.
         
         Args:
             size_limit: Maximum file size in bytes
             show_progress: Whether to show progress indicators
+            use_smart_context: Whether to use smart context analysis
         """
         self.size_limit = size_limit
         self.logger = logging.getLogger(__name__)
         self.console = Console()
         self.show_progress = show_progress
+        self.use_smart_context = use_smart_context
+        self.smart_context = SmartContextManager() if use_smart_context else None
     
     def read_file(self, file_path: Path) -> Optional[str]:
         """Read a file's content.
@@ -147,17 +153,25 @@ class FileContextManager:
             results[file_path] = self.read_file(file_path)
         return results
     
-    def create_context_from_files(self, file_paths: List[Path]) -> str:
+    def create_context_from_files(self, file_paths: List[Path], include_related: bool = True) -> str:
         """Create a formatted context string from multiple files with progress indication.
         
         Args:
             file_paths: List of file paths
+            include_related: Whether to include related files (imports, tests, configs)
             
         Returns:
             Formatted context string
         """
         if not file_paths:
             return ""
+        
+        # Use smart context if enabled
+        original_count = len(file_paths)
+        if self.use_smart_context and self.smart_context and include_related:
+            file_paths = self.smart_context.get_smart_context(file_paths)
+            if len(file_paths) > original_count:
+                self.console.print(f"[dim]Including {len(file_paths) - original_count} related files[/dim]")
         
         context_parts = []
         

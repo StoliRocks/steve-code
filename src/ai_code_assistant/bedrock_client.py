@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass
 from enum import Enum
 
@@ -43,7 +43,7 @@ class ModelType(Enum):
 class Message:
     """Represents a message in the conversation."""
     role: str  # 'user' or 'assistant'
-    content: str
+    content: Union[str, List[Dict[str, Any]]]  # String or multimodal content blocks
 
 
 class BedrockClient:
@@ -95,10 +95,18 @@ class BedrockClient:
         """
         formatted_messages = []
         for msg in messages:
-            formatted_messages.append({
-                "role": msg.role,
-                "content": msg.content
-            })
+            # Handle both string and multimodal content
+            if isinstance(msg.content, str):
+                formatted_messages.append({
+                    "role": msg.role,
+                    "content": msg.content
+                })
+            else:
+                # Multimodal content (list of content blocks)
+                formatted_messages.append({
+                    "role": msg.role,
+                    "content": msg.content
+                })
         
         body = {
             "messages": formatted_messages,

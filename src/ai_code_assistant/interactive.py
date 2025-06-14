@@ -9,6 +9,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.styles import Style
+from prompt_toolkit.completion import Completer, Completion, PathCompleter
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.syntax import Syntax
@@ -22,6 +23,9 @@ from .code_extractor import CodeExtractor
 from .file_context import FileContextManager
 from .config import ConfigManager
 from .git_integration import GitIntegration, GitStatus
+from .web_search import WebSearcher, SmartWebSearch
+from .image_handler import ImageHandler, ScreenshotCapture
+from .command_completer import CommandCompleter
 
 
 class InteractiveMode:
@@ -50,6 +54,9 @@ class InteractiveMode:
         '/git diff --staged': 'Show git diff of staged changes',
         '/git log': 'Show recent git commits',
         '/git commit': 'Create a git commit with AI-generated message',
+        '/search': 'Search the web for current information',
+        '/screenshot': 'Take a screenshot for analysis',
+        '/image': 'Add image files for analysis',
     }
     
     def __init__(
@@ -76,14 +83,19 @@ class InteractiveMode:
         # File context
         self.context_files: List[Path] = []
         
-        # Prompt session with history
+        # Prompt session with history and completion
         history_file = Path.home() / ".steve_code" / "prompt_history"
         history_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Create custom completer
+        self.completer = CommandCompleter(self.COMMANDS)
         
         self.session = PromptSession(
             history=FileHistory(str(history_file)),
             auto_suggest=AutoSuggestFromHistory(),
-            style=self._create_prompt_style()
+            style=self._create_prompt_style(),
+            completer=self.completer,
+            complete_while_typing=True
         )
         
         # System prompt - use model-specific prompt for interactive mode
@@ -95,6 +107,15 @@ class InteractiveMode:
         except RuntimeError:
             self.git = None
             self.console.print("[yellow]Note: Not in a git repository. Git commands unavailable.[/yellow]")
+        
+        # Initialize web search
+        self.web_searcher = WebSearcher()
+        self.smart_search = SmartWebSearch(self.web_searcher, self.bedrock_client)
+        
+        # Initialize image handling
+        self.image_handler = ImageHandler()
+        self.screenshot_capture = ScreenshotCapture()
+        self.context_images: List[Path] = []  # Images to include in context
     
     def _create_prompt_style(self) -> Style:
         """Create prompt style."""
@@ -222,6 +243,15 @@ class InteractiveMode:
         elif cmd.startswith('/git'):
             self._handle_git_command(user_input)
         
+        elif cmd == '/search':
+            self._handle_search(args)
+        
+        elif cmd == '/screenshot':
+            self._handle_screenshot()
+        
+        elif cmd == '/image':
+            self._add_images(args)
+        
         else:
             self.console.print(f"[red]Unknown command: {cmd}[/red]")
             self.console.print("Type /help for available commands")
@@ -243,6 +273,7 @@ class InteractiveMode:
 Model: [green]{self.bedrock_client.model_type.name}[/green]
 Messages: [yellow]{len(self.conversation.messages)}[/yellow]
 Context Files: [yellow]{len(self.context_files)}[/yellow]
+Context Images: [yellow]{len(self.context_images)}[/yellow]
 Compact Mode: [yellow]{'On' if self.compact_mode else 'Off'}[/yellow]
 Session ID: [dim]{self.conversation.session_id}[/dim]"""
         
@@ -250,6 +281,11 @@ Session ID: [dim]{self.conversation.session_id}[/dim]"""
             status += "\n\n[bold]Context Files:[/bold]"
             for file in self.context_files:
                 status += f"\n  • {file}"
+        
+        if self.context_images:
+            status += "\n\n[bold]Context Images:[/bold]"
+            for img in self.context_images:
+                status += f"\n  • {img.name}"
         
         self.console.print(Panel(status, title="Status", border_style="blue"))
     
@@ -496,24 +532,47 @@ Compact Mode: [yellow]{'Enabled' if self.compact_mode else 'Disabled'}[/yellow]
     
     def _process_message(self, user_input: str):
         """Process a user message."""
+        # Prepare content
+        content_blocks = []
+        
         # Add file context if any
-        full_input = user_input
         if self.context_files:
             context = self.file_manager.create_context_from_files(self.context_files)
-            full_input = f"{context}\n\n{user_input}"
+            text_content = f"{context}\n\n{user_input}"
+        else:
+            text_content = user_input
         
-        # Add to conversation history
-        self.conversation.add_message("user", user_input)
+        # Check if we have images to include
+        if self.context_images:
+            # Create multimodal content
+            content_blocks = self.image_handler.create_multimodal_content(
+                text_content, 
+                self.context_images
+            )
+            
+            # Clear images after use
+            self.console.print(f"[dim]Including {len(self.context_images)} image(s) in message[/dim]")
+            self.context_images = []
+            
+            # Add to conversation as multimodal
+            self.conversation.add_message("user", content_blocks)
+        else:
+            # Regular text message
+            self.conversation.add_message("user", user_input)
         
         # Prepare messages for API
-        messages = [
-            Message(role=msg.role, content=msg.content)
-            for msg in self.conversation.get_messages()
-        ]
-        
-        # If we have file context, modify the last message
-        if self.context_files and messages:
-            messages[-1] = Message(role="user", content=full_input)
+        messages = []
+        for msg in self.conversation.get_messages():
+            # Handle both string and multimodal content
+            if isinstance(msg.content, str):
+                # For the last user message, include file context if any
+                if msg == self.conversation.get_messages()[-1] and self.context_files:
+                    messages.append(Message(role=msg.role, content=text_content))
+                else:
+                    messages.append(Message(role=msg.role, content=msg.content))
+            else:
+                # Multimodal content
+                messages.append(Message(role=msg.role, content=msg.content))
         
         try:
             # Show thinking indicator with progress
@@ -684,3 +743,89 @@ Provide ONLY the commit message, no explanation."""
         except Exception:
             # Fallback to plain text
             self.console.print(response)
+    
+    def _handle_search(self, query: str):
+        """Handle web search command."""
+        if not query:
+            self.console.print("[yellow]Usage: /search <query>[/yellow]")
+            self.console.print("[yellow]Example: /search python asyncio best practices[/yellow]")
+            return
+        
+        try:
+            # Show search in progress
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=self.console,
+                transient=True,
+            ) as progress:
+                task = progress.add_task(f"Searching for: {query}", total=None)
+                
+                # Get search results with AI summary
+                summary = self.smart_search.search_with_context(
+                    query,
+                    context="User is asking this in the context of a coding assistance session."
+                )
+            
+            # Display results
+            self.console.print("\n[bold]Search Results:[/bold]\n")
+            md = Markdown(summary)
+            self.console.print(md)
+            
+            # Add to conversation
+            self.conversation.add_message("user", f"/search {query}")
+            self.conversation.add_message("assistant", summary)
+            
+        except Exception as e:
+            self.console.print(f"[red]Search error: {e}[/red]")
+    
+    def _handle_screenshot(self):
+        """Handle screenshot capture."""
+        try:
+            self.console.print("[dim]Capturing screenshot...[/dim]")
+            
+            # Capture screenshot
+            screenshot_path = self.screenshot_capture.capture_screenshot()
+            
+            if screenshot_path:
+                # Add to context images
+                self.context_images.append(screenshot_path)
+                self.console.print(f"[green]Screenshot captured: {screenshot_path.name}[/green]")
+                self.console.print("[dim]The screenshot will be included in your next message[/dim]")
+            else:
+                self.console.print("[red]Failed to capture screenshot[/red]")
+                self.console.print("[yellow]Make sure pyautogui is installed: pip install pyautogui[/yellow]")
+                
+        except Exception as e:
+            self.console.print(f"[red]Screenshot error: {e}[/red]")
+    
+    def _add_images(self, file_paths: str):
+        """Add image files to context."""
+        if not file_paths:
+            self.console.print("[yellow]Usage: /image <path1> [path2] ...[/yellow]")
+            return
+        
+        paths = file_paths.split()
+        added_count = 0
+        
+        for path_str in paths:
+            path = Path(path_str).resolve()
+            
+            if not path.exists():
+                self.console.print(f"[red]File not found: {path}[/red]")
+                continue
+            
+            if not self.image_handler.is_image_file(path):
+                self.console.print(f"[yellow]Not an image file: {path.name}[/yellow]")
+                self.console.print(f"[dim]Supported formats: {', '.join(self.image_handler.SUPPORTED_FORMATS)}[/dim]")
+                continue
+            
+            if path not in self.context_images:
+                self.context_images.append(path)
+                added_count += 1
+                self.console.print(f"[green]Added image: {path.name}[/green]")
+            else:
+                self.console.print(f"[yellow]Image already in context: {path.name}[/yellow]")
+        
+        if added_count > 0:
+            self.console.print(f"[dim]Total images in context: {len(self.context_images)}[/dim]")
