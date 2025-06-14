@@ -94,11 +94,6 @@ console = Console()
     help='Extract and save code blocks to directory'
 )
 @click.option(
-    '--no-stream',
-    is_flag=True,
-    help='Disable response streaming'
-)
-@click.option(
     '-v', '--verbose',
     is_flag=True,
     help='Enable verbose logging'
@@ -129,7 +124,6 @@ def main(
     no_stream: bool,
     output: Optional[str],
     save_code: Optional[str],
-    no_stream: bool,
     verbose: bool,
     version: bool,
     update: bool,
