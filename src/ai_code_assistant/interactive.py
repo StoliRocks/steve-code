@@ -35,6 +35,7 @@ from .command_completer import CommandCompleter
 from .auto_detection import AutoDetector
 from .context_manager import ContextManager, ContextStats
 from .smart_context_v2 import SmartContextV2
+from .structured_output import StructuredOutput, UpdateItem, TodoItem
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +169,12 @@ class InteractiveMode:
             logger.warning(f"Failed to initialize smart context: {e}")
             self.smart_context = None
             self.auto_discover_files = False
+        
+        # Initialize structured output formatter
+        self.structured_output = StructuredOutput(self.console)
+        
+        # Track current todos
+        self.current_todos: List[TodoItem] = []
     
     def _create_prompt_style(self) -> Style:
         """Create prompt style."""
@@ -716,20 +723,27 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
         discovered_files = []
         if self.auto_discover_files and not self.context_files and self.smart_context:
             # Only auto-discover if no files were manually added
-            with self.console.status("[dim]Analyzing query and discovering relevant files...[/dim]", spinner="dots"):
+            self.structured_output.start_operation("Analyzing query and discovering relevant files")
+            
+            with self.console.status("[dim]Searching codebase...[/dim]", spinner="dots"):
                 discovered_files = self.smart_context.get_relevant_files(user_input, max_files=10)
             
             if discovered_files:
-                self.console.print(f"[dim]Auto-discovered {len(discovered_files)} relevant files[/dim]")
-                # Show first few files
-                for f in discovered_files[:3]:
+                # Show discovered files with structured output
+                for f in discovered_files:
                     try:
-                        rel_path = f.relative_to(self.smart_context.project_analyzer.root_path)
+                        rel_path = str(f.relative_to(self.smart_context.project_analyzer.root_path))
                     except:
                         rel_path = f.name
-                    self.console.print(f"[dim]  • {rel_path}[/dim]")
-                if len(discovered_files) > 3:
-                    self.console.print(f"[dim]  ... and {len(discovered_files) - 3} more[/dim]")
+                    
+                    update = self.structured_output.add_update(
+                        action="Discovered",
+                        target=rel_path,
+                        details=f"Size: {f.stat().st_size:,} bytes" if f.exists() else None
+                    )
+                    self.structured_output.complete_update(update)
+                
+                self.console.print(f"\n  [green]✓ Found {len(discovered_files)} relevant files[/green]")
         
         # Add file context (manual files take precedence over discovered)
         files_to_include = self.context_files if self.context_files else discovered_files
@@ -869,14 +883,24 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
                 # Shared variable for response length
                 response_info = {'length': 0}
                 
-                def update_status(status_console, verb, start_time, response_info):
+                def update_status(status_console, verb, start_time, response_info, stats):
                     """Update status line in a separate thread."""
                     while not stop_streaming.is_set():
-                        elapsed = int(time.time() - start_time)
+                        elapsed = time.time() - start_time
                         # Estimate tokens (rough approximation)
                         estimated_tokens = response_info['length'] // 4
-                        status_line = f"{verb}... ({elapsed}s · ⚙ {estimated_tokens/1000:.1f}k tokens · [dim]ESC to interrupt[/dim])"
-                        status_console.print(f"\r{status_line}", end="")
+                        
+                        # Get current context percentage
+                        context_percent = 100 - stats.usage_percentage
+                        
+                        # Use structured output for status line
+                        self.structured_output.show_status_line(
+                            verb=verb,
+                            elapsed=elapsed,
+                            tokens=estimated_tokens,
+                            context_percent=int(context_percent),
+                            auto_compact_at=20
+                        )
                         time.sleep(0.1)
                 
                 # Create a separate console for status updates
@@ -884,7 +908,7 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
                 status_console = StatusConsole(file=sys.stderr)
                 
                 # Start status thread
-                status_thread = threading.Thread(target=update_status, args=(status_console, verb, start_time, response_info))
+                status_thread = threading.Thread(target=update_status, args=(status_console, verb, start_time, response_info, stats))
                 status_thread.daemon = True
                 status_thread.start()
                 
@@ -1416,47 +1440,96 @@ Provide ONLY the commit message, no explanation."""
         """Extract and show tasks/todos from conversation."""
         import re
         
-        todos = []
-        messages = self.conversation.get_messages()
+        # Extract todos from conversation
+        extracted_todos = self._extract_todos_from_conversation()
         
-        # Patterns to find todos/tasks
-        todo_patterns = [
-            r'(?:TODO|TASK|FIXME):\s*(.+)',
-            r'(?:^|\n)\s*[-*]\s*\[\s*\]\s*(.+)',  # Markdown checkboxes
-            r'(?:^|\n)\s*\d+\.\s*(.+?)(?:\n|$)',  # Numbered lists
-            r'(?:need to|should|must|will)\s+(.+?)(?:\.|$)',  # Action items
-        ]
+        # Convert to TodoItem objects
+        todo_items = []
+        for i, (todo_text, priority) in enumerate(extracted_todos[:20]):
+            todo_item = TodoItem(
+                id=f"todo_{i+1}",
+                content=todo_text,
+                status="pending",
+                priority=priority
+            )
+            todo_items.append(todo_item)
         
-        for msg in messages:
-            if msg.role == 'assistant':
-                content = msg.content if isinstance(msg.content, str) else str(msg.content)
-                
-                # Look for explicit todos
-                for pattern in todo_patterns:
-                    matches = re.findall(pattern, content, re.MULTILINE | re.IGNORECASE)
-                    for match in matches:
-                        task = match.strip()
-                        if len(task) > 10 and len(task) < 200:  # Reasonable task length
-                            todos.append(task)
-        
-        if todos:
-            # Remove duplicates while preserving order
-            seen = set()
-            unique_todos = []
-            for todo in todos:
-                if todo.lower() not in seen:
-                    seen.add(todo.lower())
-                    unique_todos.append(todo)
+        if todo_items:
+            # Update and display using structured output
+            self.structured_output.update_todos(todo_items)
             
-            # Display todos
-            todo_text = "[bold]📋 Tasks from Conversation[/bold]\n\n"
-            for i, todo in enumerate(unique_todos[:20], 1):  # Limit to 20
-                todo_text += f"  {i}. {todo}\n"
+            # Store for future reference
+            self.current_todos = todo_items
             
-            if len(unique_todos) > 20:
-                todo_text += f"\n  ... and {len(unique_todos) - 20} more"
-            
-            self.console.print(Panel(todo_text, border_style="blue"))
+            # Show additional context
+            if len(extracted_todos) > 20:
+                self.console.print(f"\n[dim]... and {len(extracted_todos) - 20} more tasks found[/dim]")
         else:
             self.console.print("[yellow]No specific tasks found in conversation[/yellow]")
             self.console.print("[dim]Tip: I look for TODO markers, checkboxes, numbered lists, and action phrases[/dim]")
+    
+    def _extract_todos_from_conversation(self) -> List[Tuple[str, str]]:
+        """Extract todos from conversation history.
+        
+        Returns:
+            List of (todo_text, priority) tuples
+        """
+        import re
+        
+        todos = []
+        messages = self.conversation.get_messages()
+        
+        # Patterns to find todos/tasks with priority hints
+        high_priority_patterns = [
+            r'(?:URGENT|CRITICAL|IMPORTANT|ASAP):\s*(.+)',
+            r'(?:must|need to)\s+immediately\s+(.+?)(?:\.|$)',
+        ]
+        
+        medium_priority_patterns = [
+            r'(?:TODO|TASK|FIXME):\s*(.+)',
+            r'(?:^|\n)\s*[-*]\s*\[\s*\]\s*(.+)',  # Markdown checkboxes
+            r'(?:should|need to|must)\s+(.+?)(?:\.|$)',
+        ]
+        
+        low_priority_patterns = [
+            r'(?:^|\n)\s*\d+\.\s*(.+?)(?:\n|$)',  # Numbered lists
+            r'(?:could|might want to|consider)\s+(.+?)(?:\.|$)',
+        ]
+        
+        for msg in messages[-10:]:  # Only look at recent messages
+            if msg.role == 'assistant':
+                content = msg.content if isinstance(msg.content, str) else str(msg.content)
+                
+                # Check high priority patterns
+                for pattern in high_priority_patterns:
+                    matches = re.findall(pattern, content, re.MULTILINE | re.IGNORECASE)
+                    for match in matches:
+                        task = match.strip()
+                        if 10 < len(task) < 200:
+                            todos.append((task, "high"))
+                
+                # Check medium priority patterns
+                for pattern in medium_priority_patterns:
+                    matches = re.findall(pattern, content, re.MULTILINE | re.IGNORECASE)
+                    for match in matches:
+                        task = match.strip()
+                        if 10 < len(task) < 200:
+                            todos.append((task, "medium"))
+                
+                # Check low priority patterns
+                for pattern in low_priority_patterns:
+                    matches = re.findall(pattern, content, re.MULTILINE | re.IGNORECASE)
+                    for match in matches:
+                        task = match.strip()
+                        if 10 < len(task) < 200:
+                            todos.append((task, "low"))
+        
+        # Remove duplicates while preserving order and priority
+        seen = set()
+        unique_todos = []
+        for todo, priority in todos:
+            if todo.lower() not in seen:
+                seen.add(todo.lower())
+                unique_todos.append((todo, priority))
+        
+        return unique_todos
