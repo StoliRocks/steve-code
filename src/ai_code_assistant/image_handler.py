@@ -1,11 +1,20 @@
 """Image and screenshot handling for multimodal analysis."""
 
+# Write debug to file since stdout might be redirected
+import os
+debug_file = os.path.expanduser("~/steve-code-debug.log")
+with open(debug_file, "a") as f:
+    f.write("DEBUG: Top of image_handler.py\n")
+
 import base64
 import logging
 from pathlib import Path
 from typing import Optional, List, Dict, Union
 from PIL import Image
 import io
+
+with open(debug_file, "a") as f:
+    f.write("DEBUG: Imports completed in image_handler.py\n")
 
 logger = logging.getLogger(__name__)
 
@@ -162,12 +171,18 @@ class ScreenshotCapture:
     
     def _check_dependencies(self):
         """Check if screenshot dependencies are available."""
+        with open(debug_file, "a") as f:
+            f.write("DEBUG: _check_dependencies called\n")
+        
         self.has_pyautogui = False
         try:
             # Suppress the tkinter warning on import
             import warnings
             import sys
             import io
+            
+            with open(debug_file, "a") as f:
+                f.write("DEBUG: About to redirect stderr\n")
             
             # Capture stderr to suppress pyautogui's print statements
             old_stderr = sys.stderr
@@ -177,16 +192,26 @@ class ScreenshotCapture:
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore", message=".*tkinter.*")
                     warnings.filterwarnings("ignore", message=".*MouseInfo.*")
+                    with open(debug_file, "a") as f:
+                        f.write("DEBUG: About to import pyautogui\n")
                     import pyautogui
+                    with open(debug_file, "a") as f:
+                        f.write("DEBUG: Successfully imported pyautogui\n")
                 self.has_pyautogui = True
             finally:
                 # Restore stderr
                 sys.stderr = old_stderr
+                with open(debug_file, "a") as f:
+                    f.write("DEBUG: Restored stderr\n")
                 
         except ImportError:
+            with open(debug_file, "a") as f:
+                f.write("DEBUG: ImportError - pyautogui not installed\n")
             self.logger.debug("pyautogui not installed - screenshot capture unavailable")
         except Exception as e:
             # Handle case where pyautogui is installed but tkinter is not
+            with open(debug_file, "a") as f:
+                f.write(f"DEBUG: Exception in _check_dependencies: {e}\n")
             self.logger.debug(f"Screenshot capture unavailable: {e}")
     
     def capture_screenshot(self, output_path: Optional[Path] = None) -> Optional[Path]:

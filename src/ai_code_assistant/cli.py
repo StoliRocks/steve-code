@@ -1,17 +1,31 @@
 #!/usr/bin/env python3
 """Command-line interface for AI Code Assistant."""
 
-print("DEBUG: Top of cli.py")  # Very first thing
+# Write debug to file since stdout might be redirected
+import os
+debug_file = os.path.expanduser("~/steve-code-debug.log")
+with open(debug_file, "a") as f:
+    f.write("DEBUG: Top of cli.py\n")
+
+print("DEBUG: Top of cli.py")  # Also print
 
 try:
     import os
+    with open(debug_file, "a") as f:
+        f.write("DEBUG: Imported os\n")
     print("DEBUG: Imported os")
 except Exception as e:
+    with open(debug_file, "a") as f:
+        f.write(f"DEBUG: Failed to import os: {e}\n")
     print(f"DEBUG: Failed to import os: {e}")
     raise
 import sys
+with open(debug_file, "a") as f:
+    f.write("DEBUG: Imported sys\n")
 print("DEBUG: Imported sys")
 import warnings
+with open(debug_file, "a") as f:
+    f.write("DEBUG: Imported warnings\n")
 print("DEBUG: Imported warnings")
 
 # Suppress tkinter warnings from pyautogui before any imports
@@ -20,18 +34,26 @@ warnings.filterwarnings("ignore", message=".*MouseInfo.*")
 warnings.filterwarnings("ignore", category=UserWarning, module="pyautogui")
 warnings.filterwarnings("ignore", message=".*You must install tkinter.*")
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'  # Also hide pygame prompt if used
+with open(debug_file, "a") as f:
+    f.write("DEBUG: Set up warning filters\n")
 print("DEBUG: Set up warning filters")
 
 # Redirect stderr temporarily during imports to suppress pyautogui warnings
 import io
+with open(debug_file, "a") as f:
+    f.write("DEBUG: Imported io\n")
 print("DEBUG: Imported io")
 import contextlib
+with open(debug_file, "a") as f:
+    f.write("DEBUG: Imported contextlib\n")
 print("DEBUG: Imported contextlib")
 
 # TEMPORARILY DISABLE STDERR REDIRECT TO SEE IF THIS IS THE ISSUE
 # stderr = sys.stderr
 # sys.stderr = io.StringIO()
 
+with open(debug_file, "a") as f:
+    f.write("DEBUG: Starting imports...\n")
 print("DEBUG: Starting imports...")
 
 from pathlib import Path
@@ -50,12 +72,35 @@ print("DEBUG: Imported Console")
 from rich.logging import RichHandler
 print("DEBUG: Imported RichHandler")
 
-from . import __version__
-print("DEBUG: Imported __version__")
-from .bedrock_client import BedrockClient, ModelType, Message
-print("DEBUG: Imported bedrock_client")
-from .interactive import InteractiveMode
-print("DEBUG: Imported InteractiveMode")
+try:
+    from . import __version__
+    with open(debug_file, "a") as f:
+        f.write("DEBUG: Imported __version__\n")
+    print("DEBUG: Imported __version__")
+except Exception as e:
+    with open(debug_file, "a") as f:
+        f.write(f"DEBUG: Failed to import __version__: {e}\n")
+    raise
+
+try:
+    from .bedrock_client import BedrockClient, ModelType, Message
+    with open(debug_file, "a") as f:
+        f.write("DEBUG: Imported bedrock_client\n")
+    print("DEBUG: Imported bedrock_client")
+except Exception as e:
+    with open(debug_file, "a") as f:
+        f.write(f"DEBUG: Failed to import bedrock_client: {e}\n")
+    raise
+
+try:
+    from .interactive import InteractiveMode
+    with open(debug_file, "a") as f:
+        f.write("DEBUG: Imported InteractiveMode\n")
+    print("DEBUG: Imported InteractiveMode")
+except Exception as e:
+    with open(debug_file, "a") as f:
+        f.write(f"DEBUG: Failed to import InteractiveMode: {e}\n")
+    raise
 from .conversation import ConversationHistory
 print("DEBUG: Imported ConversationHistory")
 from .code_extractor import CodeExtractor

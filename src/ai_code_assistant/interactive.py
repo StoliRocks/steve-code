@@ -1,7 +1,12 @@
 """Interactive mode for the AI Code Assistant."""
 
-import sys
+# Write debug to file since stdout might be redirected
 import os
+debug_file = os.path.expanduser("~/steve-code-debug.log")
+with open(debug_file, "a") as f:
+    f.write("DEBUG: Top of interactive.py\n")
+
+import sys
 import subprocess
 import logging
 import time
@@ -10,6 +15,9 @@ import threading
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime
+
+with open(debug_file, "a") as f:
+    f.write("DEBUG: Basic imports completed in interactive.py\n")
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
