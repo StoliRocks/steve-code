@@ -33,18 +33,68 @@ A self-contained AI code assistant CLI tool that mimics Claude Code's functional
 - AWS account with Bedrock access
 - AWS credentials configured
 
-### Install from source
+### Installation Options
+
+#### Option 1: Using pipx (Recommended)
+Best for installing as a standalone CLI tool:
 
 ```bash
-git clone https://github.com/yourusername/steve-code.git
+# Install pipx if needed
+sudo apt install pipx  # On Debian/Ubuntu
+pipx ensurepath
+
+# Clone and install
+git clone https://github.com/StoliRocks/steve-code.git
 cd steve-code
-pip install -e .
+pipx install -e .
 ```
 
-### Install dependencies only
+#### Option 2: Using Virtual Environment
+For development or if you prefer venv isolation:
 
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/StoliRocks/steve-code.git
+cd steve-code
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -e .
+
+# Create an alias for convenience (add to ~/.bashrc)
+echo 'alias sc="~/projects/steve-code/venv/bin/sc"' >> ~/.bashrc
+```
+
+#### Option 3: Using UV (Modern Python Package Manager)
+Fast alternative package manager:
+
+```bash
+# Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Clone and install
+git clone https://github.com/StoliRocks/steve-code.git
+cd steve-code
+uv pip install -e .
+```
+
+#### Option 4: System-wide Installation (Not Recommended)
+Only if you understand the risks:
+
+```bash
+git clone https://github.com/StoliRocks/steve-code.git
+cd steve-code
+pip install -e . --user --break-system-packages
+```
+
+### Install from GitHub (Latest Release)
+
+```bash
+# Using pipx (recommended)
+pipx install git+https://github.com/StoliRocks/steve-code.git
+
+# Using pip with venv
+python3 -m venv steve-env
+source steve-env/bin/activate
+pip install git+https://github.com/StoliRocks/steve-code.git
 ```
 
 ## Configuration
@@ -367,6 +417,13 @@ Steve Code defaults to 128,000 tokens (128k) for maximum response length, which 
 You can adjust the token limit using `--max-tokens` or by setting it in interactive mode with `/set max_tokens <value>`.
 
 ## Troubleshooting
+
+### Installation Issues
+
+If you encounter "externally-managed-environment" error on modern Linux systems:
+- This is a protection mechanism to prevent breaking system Python
+- Use one of the installation methods above (pipx recommended)
+- See [PEP 668](https://peps.python.org/pep-0668/) for more details
 
 ### AWS Credentials Error
 
