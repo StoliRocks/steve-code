@@ -380,12 +380,12 @@ class InteractiveMode:
                 except KeyboardInterrupt:
                     self.console.print("\n[yellow]Use /exit to quit[/yellow]")
                     continue
-            except EOFError:
-                break
-            except Exception as e:
-                from rich.markup import escape
-                self.console.print(f"[red]Error: {escape(str(e))}[/red]")
-                logger.exception("Error in main loop")
+                except EOFError:
+                    break
+                except Exception as e:
+                    from rich.markup import escape
+                    self.console.print(f"[red]Error: {escape(str(e))}[/red]")
+                    logger.exception("Error in main loop")
         except Exception as e:
             self.console.print(f"[red]Fatal error in interactive mode: {e}[/red]")
             logger.exception("Fatal error in interactive mode")
