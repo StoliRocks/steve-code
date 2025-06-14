@@ -6,6 +6,7 @@ import subprocess
 import logging
 import time
 import random
+import threading
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime
@@ -42,6 +43,7 @@ from .structured_action_parser import StructuredActionParser
 from .action_reprocessor import ActionReprocessor
 from .response_filter import ResponseFilter
 from .response_processor import ResponseProcessor
+from .update_checker import UpdateChecker, get_update_message
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +100,7 @@ class InteractiveMode:
         '/search': 'Search the web for current information',
         '/screenshot': 'Take a screenshot for analysis',
         '/image': 'Add image files for analysis',
+        '/update': 'Check for and install updates',
     }
     
     def __init__(
@@ -221,12 +224,70 @@ class InteractiveMode:
         # Store last response for /expand command
         self.last_response = ""
         self.last_response_sections = []
+        
+        # Initialize update checker
+        self.update_checker = UpdateChecker()
+        self.update_check_thread = None
+        self.update_available = False
+        self.last_update_message = None
     
     def _create_prompt_style(self) -> Style:
         """Create prompt style."""
         return Style.from_dict({
             'prompt': '#00aa00 bold',
         })
+    
+    def _handle_update(self):
+        """Handle the /update command."""
+        self.console.print("[cyan]Checking for updates...[/cyan]")
+        
+        # Force check for updates
+        update_info = self.update_checker.check_for_update(force=True)
+        
+        if update_info:
+            latest_version, download_url = update_info
+            from .version import __version__
+            
+            self.console.print(f"\n[green]Update available![/green]")
+            self.console.print(f"Current version: v{__version__}")
+            self.console.print(f"Latest version: v{latest_version}")
+            self.console.print(f"Release: {download_url}\n")
+            
+            # Ask for confirmation
+            response = input("Would you like to update now? (y/N): ")
+            if response.lower() == 'y':
+                if self.update_checker.auto_update(confirm=False):
+                    self.console.print("\n[yellow]Please restart steve-code to use the new version.[/yellow]")
+                    self.console.print("Exiting...")
+                    sys.exit(0)
+                else:
+                    self.console.print("\n[red]Update failed. Please try manually:[/red]")
+                    self.console.print("pip install --upgrade git+https://github.com/StoliRocks/steve-code.git")
+        else:
+            self.console.print(f"[green]You're already on the latest version![/green]")
+    
+    def _background_update_check(self):
+        """Background thread to check for updates periodically."""
+        while True:
+            try:
+                # Wait 30 minutes
+                time.sleep(30 * 60)  # 30 minutes
+                
+                # Check for updates
+                update_info = self.update_checker.check_for_update()
+                if update_info and not self.update_available:
+                    self.update_available = True
+                    latest_version, _ = update_info
+                    from .version import __version__
+                    self.last_update_message = (
+                        f"\n[yellow]📦 Update available: v{latest_version} "
+                        f"(current: v{__version__})[/yellow]\n"
+                        f"[dim]Run '/update' or 'sc --update' to install[/dim]\n"
+                    )
+                    # Print the update message (thread-safe with Rich console)
+                    self.console.print(self.last_update_message)
+            except Exception as e:
+                logger.debug(f"Background update check failed: {e}")
     
     def run(self):
         """Run the interactive mode."""
@@ -236,6 +297,22 @@ class InteractiveMode:
             from rich.markup import escape
             self.console.print(f"[red]Error showing welcome: {escape(str(e))}[/red]")
             logger.error(f"Welcome screen error: {e}", exc_info=True)
+        
+        # Start background update checker thread
+        self.update_check_thread = threading.Thread(
+            target=self._background_update_check,
+            daemon=True  # Dies when main program exits
+        )
+        self.update_check_thread.start()
+        
+        # Also check for updates on startup
+        try:
+            update_msg = get_update_message()
+            if update_msg:
+                self.console.print(update_msg)
+                self.console.print()
+        except Exception as e:
+            logger.debug(f"Initial update check failed: {e}")
         
         while True:
             try:
@@ -420,6 +497,9 @@ class InteractiveMode:
                 self._show_action_todos()
             else:
                 self._show_todos()
+        
+        elif cmd == '/update':
+            self._handle_update()
         
         else:
             self.console.print(f"[red]Unknown command: {cmd}[/red]")
@@ -933,10 +1013,11 @@ Example response:
         # Auto-detect content in the input
         detections = self.auto_detector.extract_all(user_input)
         
-        # Show what was detected
-        summary = self.auto_detector.format_detection_summary(detections)
-        if summary:
-            self.console.print(f"[dim]{summary}[/dim]")
+        # Show what was detected (only in verbose mode)
+        if self.verbose_mode:
+            summary = self.auto_detector.format_detection_summary(detections)
+            if summary:
+                self.console.print(f"[dim]{summary}[/dim]")
         
         # Prepare content parts
         content_parts = []
@@ -994,8 +1075,8 @@ Example response:
                 with self.console.status("[dim]Analyzing query and discovering relevant files...[/dim]", spinner="dots"):
                     discovered_files = self.smart_context.get_relevant_files(user_input, max_files=10)
             
-            if discovered_files:
-                # Show what files were discovered
+            if discovered_files and self.verbose_mode:
+                # Show what files were discovered (only in verbose mode)
                 self.console.print(f"[green]Auto-discovered {len(discovered_files)} relevant files:[/green]")
                 for file in discovered_files[:5]:
                     rel_path = file.relative_to(self.root_path) if hasattr(file, 'relative_to') else file
@@ -1006,11 +1087,13 @@ Example response:
         # Add file context (manual files take precedence over discovered)
         files_to_include = self.context_files if self.context_files else discovered_files
         if files_to_include:
-            self.console.print(f"[dim]Including {len(files_to_include)} files in context...[/dim]")
+            if self.verbose_mode:
+                self.console.print(f"[dim]Including {len(files_to_include)} files in context...[/dim]")
             context = self.file_manager.create_context_from_files(files_to_include)
             if context:
                 content_parts.append(context)
-                self.console.print(f"[dim]Added {len(context)} characters of file content[/dim]")
+                if self.verbose_mode:
+                    self.console.print(f"[dim]Added {len(context)} characters of file content[/dim]")
             else:
                 self.console.print("[yellow]Warning: No file content generated![/yellow]")
         

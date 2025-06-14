@@ -21,7 +21,7 @@ class UpdateChecker:
     
     GITHUB_API_URL = "https://api.github.com/repos/{owner}/{repo}/releases/latest"
     CACHE_FILE = Path.home() / ".steve_code" / "update_check_cache.json"
-    CHECK_INTERVAL = timedelta(hours=24)  # Check once per day
+    CHECK_INTERVAL = timedelta(minutes=30)  # Check every 30 minutes
     
     def __init__(self, owner: str = "StoliRocks", repo: str = "steve-code"):
         """Initialize update checker.
