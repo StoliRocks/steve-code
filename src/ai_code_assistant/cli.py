@@ -79,11 +79,6 @@ console = Console()
     help='Include file(s) in context'
 )
 @click.option(
-    '--no-stream',
-    is_flag=True,
-    help='Show full response at once instead of streaming'
-)
-@click.option(
     '-o', '--output',
     type=click.Path(),
     help='Save response to file'
@@ -121,7 +116,6 @@ def main(
     max_tokens: int,
     interactive: bool,
     files: tuple,
-    no_stream: bool,
     output: Optional[str],
     save_code: Optional[str],
     verbose: bool,
@@ -198,8 +192,8 @@ def main(
         temperature = config_manager.get('temperature', 0.7)
     if max_tokens is None:
         max_tokens = config_manager.get('max_tokens', 128000)
-    # Default to non-streaming mode (show full response)
-    compact_mode = no_stream or config_manager.get('compact_mode', True)
+    # Always use compact mode (collect full response before display)
+    compact_mode = True
     
     # Map model names
     model_map = {
@@ -277,22 +271,11 @@ def main(
         # Get appropriate system prompt for single command mode
         system_prompt = bedrock_client.get_default_system_prompt(interactive=False)
         
-        if no_stream:
-            # Non-streaming response
-            response = bedrock_client.send_message(messages, system_prompt=system_prompt, stream=False)
-            response_text = response.get('content', [{}])[0].get('text', '')
-            console.print(response_text)
-        else:
-            # Streaming response
-            for chunk in bedrock_client.send_message(messages, system_prompt=system_prompt, stream=True):
-                response_text += chunk
-                if not compact_mode:
-                    console.print(chunk, end="")
-            
-            if compact_mode:
-                console.print(response_text)
-            else:
-                console.print()  # New line after streaming
+        # Always collect full response for proper processing
+        for chunk in bedrock_client.send_message(messages, system_prompt=system_prompt, stream=True):
+            response_text += chunk
+        
+        console.print(response_text)
         
         # Save response to file if requested
         if output:

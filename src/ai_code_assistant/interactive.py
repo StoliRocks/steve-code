@@ -85,8 +85,7 @@ class InteractiveMode:
         '/todo all': 'Execute all pending actions',
         '/todo skip': 'Skip the next pending action',
         '/todo actions': 'Show current action queue',
-        '/stream': 'Toggle response display mode (default: off, shows cleaned response)',
-        '/verbose': 'Toggle verbose mode (show/hide technical details)',
+        '/verbose': 'Toggle verbose mode (show/hide technical details like XML blocks)',
         '/expand': 'Show last response with all sections expanded',
         '/settings': 'Show or modify settings (use /settings <key> <value>)',
         '/set': 'Set a configuration value (temperature, max_tokens, region, auto_detect, verbose)',
@@ -349,13 +348,6 @@ class InteractiveMode:
                 self.console.print("[yellow]Usage: /set <key> <value>[/yellow]")
                 self.console.print("[yellow]Keys: temperature, max_tokens, region, verbose[/yellow]")
         
-        elif cmd == '/stream':
-            self.compact_mode = not self.compact_mode  # Toggle streaming
-            if self.compact_mode:
-                self.console.print("[green]Response display: Clean mode (hides technical details)[/green]")
-            else:
-                self.console.print("[green]Response display: Raw mode (shows all content)[/green]")
-        
         elif cmd == '/verbose':
             self.verbose_mode = not self.verbose_mode
             self.response_processor.verbose_mode = self.verbose_mode
@@ -491,7 +483,6 @@ Model: [green]{self.bedrock_client.model_type.value}[/green]
 Region: [yellow]{self.bedrock_client.region_name}[/yellow]
 Max Tokens: [yellow]{self.bedrock_client.max_tokens}[/yellow]
 Temperature: [yellow]{self.bedrock_client.temperature}[/yellow]
-Response Display: [yellow]{'Show full response at once' if self.compact_mode else 'Stream response'}[/yellow]
 Auto-detect URLs: [yellow]{'Enabled' if self.auto_detector.auto_fetch_urls else 'Disabled'}[/yellow]
 Auto-detect Images: [yellow]{'Enabled' if self.auto_detector.auto_detect_images else 'Disabled'}[/yellow]
 Auto-detect Files: [yellow]{'Enabled' if self.auto_detector.auto_detect_files else 'Disabled'}[/yellow]
