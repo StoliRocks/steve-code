@@ -878,8 +878,8 @@ Example response:
                             self.console.print("[red]ERROR: No code files found in directory![/red]")
                             self.console.print(f"[red]Working directory: {self.root_path}[/red]")
             
-            # Fallback to smart context if available
-            elif self.smart_context:
+            # Fallback to smart context if available and project analyzer didn't work
+            if not discovered_files and self.smart_context:
                 with self.console.status("[dim]Analyzing query and discovering relevant files...[/dim]", spinner="dots"):
                     discovered_files = self.smart_context.get_relevant_files(user_input, max_files=10)
             
