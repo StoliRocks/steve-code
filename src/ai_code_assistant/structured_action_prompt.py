@@ -9,18 +9,35 @@ you MUST use the following structured format:
 
 <actions>
   <action type="command">
-    <description>Create directory structure</description>
-    <command>mkdir -p cdk/lib cdk/bin cdk/test</command>
+    <description>What this command does</description>
+    <command>the bash command to execute</command>
   </action>
   
   <action type="file">
-    <description>Create package.json</description>
-    <path>cdk/package.json</path>
+    <description>Purpose of this file</description>
+    <path>path/to/file.ext</path>
+    <content><![CDATA[
+file content goes here
+can be multiple lines
+with any special characters
+]]></content>
+  </action>
+</actions>
+
+Example usage:
+<actions>
+  <action type="command">
+    <description>Create project directories</description>
+    <command>mkdir -p src tests docs</command>
+  </action>
+  
+  <action type="file">
+    <description>Create configuration file</description>
+    <path>config.json</path>
     <content><![CDATA[
 {
-  "name": "cdk",
-  "version": "0.1.0",
-  ...
+  "setting": "value",
+  "another": 123
 }
 ]]></content>
   </action>
@@ -38,4 +55,4 @@ After outputting actions, wait for confirmation before proceeding to the next se
 
 def enhance_system_prompt(base_prompt: str) -> str:
     """Enhance the system prompt with structured action instructions."""
-    return f"{base_prompt}\n\n{STRUCTURED_ACTION_PROMPT}"
+    return base_prompt + "\n\n" + STRUCTURED_ACTION_PROMPT

@@ -52,17 +52,14 @@ You are running in a CLI environment where users can:
 6. When creating files or running commands, use structured XML format:
    <actions>
      <action type="command">
-       <description>Create directory structure</description>
-       <command>mkdir -p cdk/lib cdk/bin</command>
+       <description>What this command does</description>
+       <command>the bash command here</command>
      </action>
      <action type="file">
-       <description>Create package.json</description>
-       <path>cdk/package.json</path>
+       <description>Purpose of this file</description>
+       <path>relative/path/to/file</path>
        <content><![CDATA[
-{
-  "name": "cdk",
-  "version": "0.1.0"
-}
+file content here
 ]]></content>
      </action>
    </actions>
