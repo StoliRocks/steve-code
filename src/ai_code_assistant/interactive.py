@@ -41,6 +41,7 @@ from .collapsible_output import CollapsibleOutput
 from .structured_action_parser import StructuredActionParser
 from .action_reprocessor import ActionReprocessor
 from .response_filter import ResponseFilter
+from .response_processor import ResponseProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -84,10 +85,11 @@ class InteractiveMode:
         '/todo all': 'Execute all pending actions',
         '/todo skip': 'Skip the next pending action',
         '/todo actions': 'Show current action queue',
-        '/stream': 'Toggle response streaming (default: off, shows full response at once)',
+        '/stream': 'Toggle response display mode (default: off, shows cleaned response)',
+        '/verbose': 'Toggle verbose mode (show/hide technical details)',
         '/expand': 'Show last response with all sections expanded',
         '/settings': 'Show or modify settings (use /settings <key> <value>)',
-        '/set': 'Set a configuration value (temperature, max_tokens, region, auto_detect)',
+        '/set': 'Set a configuration value (temperature, max_tokens, region, auto_detect, verbose)',
         '/config': 'Save current settings to config file',
         '/git': 'Show git status',
         '/git diff': 'Show git diff of unstaged changes',
@@ -118,6 +120,7 @@ class InteractiveMode:
         self.file_manager = FileContextManager()
         self.console = Console()
         self.compact_mode = compact_mode
+        self.verbose_mode = False  # Hide implementation details by default
         self.config_manager = ConfigManager()
         
         # File context
@@ -206,6 +209,9 @@ class InteractiveMode:
         # Initialize structured action parser
         self.action_parser = StructuredActionParser()
         self.action_reprocessor = ActionReprocessor(self.bedrock_client)
+        
+        # Initialize response processor
+        self.response_processor = ResponseProcessor(verbose_mode=self.verbose_mode)
         
         # Track current todos
         self.current_todos: List[TodoItem] = []
@@ -341,14 +347,22 @@ class InteractiveMode:
                 self._modify_settings(args)
             else:
                 self.console.print("[yellow]Usage: /set <key> <value>[/yellow]")
-                self.console.print("[yellow]Keys: temperature, max_tokens, region[/yellow]")
+                self.console.print("[yellow]Keys: temperature, max_tokens, region, verbose[/yellow]")
         
         elif cmd == '/stream':
             self.compact_mode = not self.compact_mode  # Toggle streaming
             if self.compact_mode:
-                self.console.print("[green]Response streaming disabled - will show full response at once[/green]")
+                self.console.print("[green]Response display: Clean mode (hides technical details)[/green]")
             else:
-                self.console.print("[green]Response streaming enabled - will show response as it's generated[/green]")
+                self.console.print("[green]Response display: Raw mode (shows all content)[/green]")
+        
+        elif cmd == '/verbose':
+            self.verbose_mode = not self.verbose_mode
+            self.response_processor.verbose_mode = self.verbose_mode
+            if self.verbose_mode:
+                self.console.print("[yellow]Verbose mode enabled - showing technical details[/yellow]")
+            else:
+                self.console.print("[green]Verbose mode disabled - hiding technical details[/green]")
         
         elif cmd == '/expand':
             self._show_expanded_response()
@@ -483,6 +497,7 @@ Auto-detect Images: [yellow]{'Enabled' if self.auto_detector.auto_detect_images 
 Auto-detect Files: [yellow]{'Enabled' if self.auto_detector.auto_detect_files else 'Disabled'}[/yellow]
 Auto-discover Files: [yellow]{'Enabled' if self.auto_discover_files else 'Disabled'}[/yellow]
 Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/yellow]
+Verbose Mode: [yellow]{'Enabled' if self.verbose_mode else 'Disabled'}[/yellow]
 
 [dim]History: {self.conversation.history_dir}[/dim]
 
@@ -570,9 +585,22 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
                 else:
                     self.console.print("[dim]Use /files to manually add files to context[/dim]")
             
+            elif key == "verbose":
+                # Parse verbose setting
+                if value.lower() in ['true', 'on', '1', 'yes']:
+                    self.verbose_mode = True
+                    self.response_processor.verbose_mode = True
+                    self.console.print("[yellow]Verbose mode enabled - showing technical details[/yellow]")
+                elif value.lower() in ['false', 'off', '0', 'no']:
+                    self.verbose_mode = False
+                    self.response_processor.verbose_mode = False
+                    self.console.print("[green]Verbose mode disabled - hiding technical details[/green]")
+                else:
+                    self.console.print(f"[yellow]Invalid verbose value. Use: true/false, on/off, yes/no[/yellow]")
+            
             else:
                 self.console.print(f"[red]Unknown setting: {key}[/red]")
-                self.console.print("[yellow]Available keys: temperature, max_tokens, region, auto_detect, auto_compact, auto_discover[/yellow]")
+                self.console.print("[yellow]Available keys: temperature, max_tokens, region, auto_detect, auto_compact, auto_discover, verbose[/yellow]")
         
         except ValueError as e:
             from rich.markup import escape
@@ -1117,7 +1145,7 @@ Example response:
                         response_text += chunk
                         progress.update(task, description=f"Generating response... ({len(response_text)} chars)")
                 
-                # Display full response
+                # Display full response (this cleans and processes actions)
                 self._display_response(response_text)
                 # Note: _display_response already calls _process_actions
             else:
@@ -1163,35 +1191,14 @@ Example response:
                     # Clear the status and show assistant label
                     live.stop()
                 
-                # Now stream the response with filtering
-                self.console.print("\n[dim]Assistant:[/dim]")
-                
-                # Create response filter
-                filter = ResponseFilter()
-                has_actions = False
-                
+                # Collect full response first (even in streaming mode)
+                # This allows proper cleaning before display
                 for chunk in stream:
                     response_text += chunk
-                    # Filter the chunk to hide action blocks
-                    filtered_chunk, found_actions = filter.filter_chunk(chunk)
-                    if found_actions:
-                        has_actions = True
-                    if filtered_chunk:
-                        self.console.print(filtered_chunk, end="")
                 
-                # Output any remaining content
-                remaining = filter.get_remaining()
-                if remaining:
-                    self.console.print(remaining, end="")
-                
-                self.console.print()  # New line after streaming
-                
-                # If we detected actions, show a note
-                if has_actions:
-                    self.console.print("\n[dim]📋 Processing file and command actions...[/dim]")
-            
-            # Process actions and get cleaned response
-            self._process_and_display_actions(response_text)
+                # Now display the cleaned response
+                self.console.print("\n[dim]Assistant:[/dim]")
+                self._display_response(response_text)
             
             # Add to conversation history (with original response for context)
             self.conversation.add_message("assistant", response_text)
@@ -1333,11 +1340,9 @@ Provide ONLY the commit message, no explanation."""
         # Store original for /expand command
         self.last_response = response
         
-        # Extract actions and get cleaned response
-        structured_actions, clean_response = self.action_parser.extract_actions(response)
-        
-        # Use cleaned response for display
-        display_response = clean_response if structured_actions else response
+        # Process the response to clean it
+        processed = self.response_processor.process(response)
+        display_response = self.response_processor.format_for_display(processed)
         
         # First, parse the response into collapsible sections
         sections = self.collapsible_output.parse_response(display_response)

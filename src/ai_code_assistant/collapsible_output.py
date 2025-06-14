@@ -49,7 +49,7 @@ class CollapsibleSection:
                 console.print(Panel(self.content, title=self.title, border_style="blue"))
         else:
             # Show collapsed with line count
-            hint = f"[dim]{self.line_count} lines (ctrl+r to expand)[/dim]"
+            hint = f"[dim]{self.line_count} lines (use /expand to show all)[/dim]"
             console.print(f"● {self.title}")
             console.print(f"  ⎿ {hint}")
 
