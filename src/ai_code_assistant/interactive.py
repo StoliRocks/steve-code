@@ -898,8 +898,13 @@ Example response:
         # Add file context (manual files take precedence over discovered)
         files_to_include = self.context_files if self.context_files else discovered_files
         if files_to_include:
+            self.console.print(f"[dim]Including {len(files_to_include)} files in context...[/dim]")
             context = self.file_manager.create_context_from_files(files_to_include)
-            content_parts.append(context)
+            if context:
+                content_parts.append(context)
+                self.console.print(f"[dim]Added {len(context)} characters of file content[/dim]")
+            else:
+                self.console.print("[yellow]Warning: No file content generated![/yellow]")
         
         # Auto-fetch URLs if detected
         if detections['urls']:
@@ -979,19 +984,19 @@ Example response:
             # Add to conversation as multimodal
             self.conversation.add_message("user", content_blocks)
         else:
-            # Regular text message
-            self.conversation.add_message("user", user_input)
+            # Regular text message - but use text_content if we have file context
+            if content_parts:
+                self.conversation.add_message("user", text_content)
+            else:
+                self.conversation.add_message("user", user_input)
         
         # Prepare messages for API
         messages = []
         for msg in self.conversation.get_messages():
             # Handle both string and multimodal content
             if isinstance(msg.content, str):
-                # For the last user message, include file context if any
-                if msg == self.conversation.get_messages()[-1] and self.context_files:
-                    messages.append(Message(role=msg.role, content=text_content))
-                else:
-                    messages.append(Message(role=msg.role, content=msg.content))
+                # Just use the content as-is since we already included files in conversation
+                messages.append(Message(role=msg.role, content=msg.content))
             else:
                 # Multimodal content
                 messages.append(Message(role=msg.role, content=msg.content))
