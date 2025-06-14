@@ -240,11 +240,13 @@ def main(
                 logging.debug(f"Update check failed: {e}")
             
             # Check if we're in a terminal that supports interactive mode
+            # Only exit if explicitly not a TTY and not forced with -i
             if not sys.stdin.isatty() and not interactive:
-                console.print("[yellow]Not in an interactive terminal. Use -i flag to force interactive mode.[/yellow]")
-                return
+                console.print("[yellow]Warning: Not in an interactive terminal.[/yellow]")
+                # Try to continue anyway since interactive is the default
             
             try:
+                console.print("[dim]Starting interactive mode...[/dim]")  # Debug message
                 interactive_mode = InteractiveMode(
                     bedrock_client=bedrock_client,
                     compact_mode=compact
