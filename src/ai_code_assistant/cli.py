@@ -3,13 +3,16 @@
 import os
 import sys
 import warnings
+
+# Suppress tkinter warnings from pyautogui before any imports
+warnings.filterwarnings("ignore", message=".*tkinter.*")
+warnings.filterwarnings("ignore", message=".*MouseInfo.*")
+warnings.filterwarnings("ignore", category=UserWarning, module="pyautogui")
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'  # Also hide pygame prompt if used
+
 from pathlib import Path
 from typing import Optional, List
 import logging
-
-# Suppress tkinter warnings from pyautogui
-warnings.filterwarnings("ignore", message=".*tkinter.*")
-warnings.filterwarnings("ignore", category=UserWarning, module="pyautogui")
 
 import click
 from dotenv import load_dotenv
@@ -66,7 +69,7 @@ console = Console()
 @click.option(
     '-i', '--interactive',
     is_flag=True,
-    help='Start in interactive mode'
+    help='Force interactive mode (default when no prompt given)'
 )
 @click.option(
     '-f', '--file',
@@ -136,8 +139,8 @@ def main(
     """Steve Code - A self-contained AI code assistant using AWS Bedrock.
     
     Examples:
-        # Interactive mode
-        steve-code -i
+        # Interactive mode (default)
+        steve-code
         
         # Single prompt
         steve-code "How do I implement a binary search in Python?"
@@ -224,8 +227,9 @@ def main(
             temperature=temperature
         )
         
-        # Interactive mode
+        # Interactive mode (default when no prompt provided)
         if interactive or not prompt:
+            
             # Check for updates in background (non-blocking)
             try:
                 update_msg = get_update_message()
@@ -237,11 +241,7 @@ def main(
             
             # Check if we're in a terminal that supports interactive mode
             if not sys.stdin.isatty() and not interactive:
-                console.print("[yellow]No input provided. Use -i for interactive mode or provide a prompt.[/yellow]")
-                console.print("\nExamples:")
-                console.print('  sc -i                    # Start interactive mode')
-                console.print('  sc "How do I sort a list in Python?"  # Single query')
-                console.print('  sc --help                # Show all options')
+                console.print("[yellow]Not in an interactive terminal. Use -i flag to force interactive mode.[/yellow]")
                 return
             
             try:
