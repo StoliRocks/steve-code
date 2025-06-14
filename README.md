@@ -18,6 +18,7 @@ A self-contained AI code assistant CLI tool that mimics Claude Code's functional
 - **Web Search**: Search the web for current information and documentation
 - **Image/Screenshot Support**: Analyze images, screenshots, and visual content
 - **Path Autocomplete**: Tab completion for file paths and commands
+- **Auto-Detection**: Automatically fetches URLs and detects images in your prompts
 
 ## Installation
 
@@ -264,6 +265,30 @@ When you include a file, Steve Code automatically includes related files:
 sc -i
 >>> /files src/main.py  # Also includes imports, tests, and config files
 >>> Review this code and its dependencies
+```
+
+### Auto-Detection
+
+Steve Code automatically detects and processes URLs and images in your messages:
+
+```bash
+sc -i
+>>> Explain the rate limiting in https://api.example.com/docs/rate-limits
+# Automatically fetches and includes the webpage content
+
+>>> What's wrong with this error? screenshot.png
+# Automatically includes the image for visual analysis
+
+>>> Compare design.jpg with the implementation in index.html
+# Includes both the image and file automatically
+```
+
+Control auto-detection with:
+```bash
+>>> /set auto_detect urls    # Toggle URL fetching
+>>> /set auto_detect images  # Toggle image detection
+>>> /set auto_detect all     # Enable all auto-detection
+>>> /set auto_detect none    # Disable all auto-detection
 ```
 
 ## Project Structure

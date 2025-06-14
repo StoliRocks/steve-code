@@ -26,6 +26,7 @@ from .git_integration import GitIntegration, GitStatus
 from .web_search import WebSearcher, SmartWebSearch
 from .image_handler import ImageHandler, ScreenshotCapture
 from .command_completer import CommandCompleter
+from .auto_detection import AutoDetector
 
 
 class InteractiveMode:
@@ -47,7 +48,7 @@ class InteractiveMode:
         '/tree': 'Show directory tree',
         '/compact': 'Toggle compact mode',
         '/settings': 'Show or modify settings (use /settings <key> <value>)',
-        '/set': 'Set a configuration value (temperature, max_tokens, region)',
+        '/set': 'Set a configuration value (temperature, max_tokens, region, auto_detect)',
         '/config': 'Save current settings to config file',
         '/git': 'Show git status',
         '/git diff': 'Show git diff of unstaged changes',
@@ -116,6 +117,13 @@ class InteractiveMode:
         self.image_handler = ImageHandler()
         self.screenshot_capture = ScreenshotCapture()
         self.context_images: List[Path] = []  # Images to include in context
+        
+        # Initialize auto-detection
+        self.auto_detector = AutoDetector(
+            auto_fetch_urls=True,
+            auto_detect_images=True,
+            auto_detect_files=False  # Can be enabled via settings
+        )
     
     def _create_prompt_style(self) -> Style:
         """Create prompt style."""
@@ -298,6 +306,9 @@ Region: [yellow]{self.bedrock_client.region_name}[/yellow]
 Max Tokens: [yellow]{self.bedrock_client.max_tokens}[/yellow]
 Temperature: [yellow]{self.bedrock_client.temperature}[/yellow]
 Compact Mode: [yellow]{'Enabled' if self.compact_mode else 'Disabled'}[/yellow]
+Auto-detect URLs: [yellow]{'Enabled' if self.auto_detector.auto_fetch_urls else 'Disabled'}[/yellow]
+Auto-detect Images: [yellow]{'Enabled' if self.auto_detector.auto_detect_images else 'Disabled'}[/yellow]
+Auto-detect Files: [yellow]{'Enabled' if self.auto_detector.auto_detect_files else 'Disabled'}[/yellow]
 
 [dim]History: {self.conversation.history_dir}[/dim]
 
@@ -347,9 +358,33 @@ Compact Mode: [yellow]{'Enabled' if self.compact_mode else 'Disabled'}[/yellow]
                 )
                 self.console.print(f"[green]Region set to {value}[/green]")
             
+            elif key == "auto_detect":
+                # Parse auto-detection settings
+                if value.lower() in ['urls', 'url']:
+                    self.auto_detector.auto_fetch_urls = not self.auto_detector.auto_fetch_urls
+                    self.console.print(f"[green]URL auto-detection {'enabled' if self.auto_detector.auto_fetch_urls else 'disabled'}[/green]")
+                elif value.lower() in ['images', 'image']:
+                    self.auto_detector.auto_detect_images = not self.auto_detector.auto_detect_images
+                    self.console.print(f"[green]Image auto-detection {'enabled' if self.auto_detector.auto_detect_images else 'disabled'}[/green]")
+                elif value.lower() in ['files', 'file']:
+                    self.auto_detector.auto_detect_files = not self.auto_detector.auto_detect_files
+                    self.console.print(f"[green]File auto-detection {'enabled' if self.auto_detector.auto_detect_files else 'disabled'}[/green]")
+                elif value.lower() in ['all', 'on']:
+                    self.auto_detector.auto_fetch_urls = True
+                    self.auto_detector.auto_detect_images = True
+                    self.auto_detector.auto_detect_files = True
+                    self.console.print("[green]All auto-detection enabled[/green]")
+                elif value.lower() in ['none', 'off']:
+                    self.auto_detector.auto_fetch_urls = False
+                    self.auto_detector.auto_detect_images = False
+                    self.auto_detector.auto_detect_files = False
+                    self.console.print("[green]All auto-detection disabled[/green]")
+                else:
+                    self.console.print("[yellow]Usage: /set auto_detect [urls|images|files|all|none][/yellow]")
+            
             else:
                 self.console.print(f"[red]Unknown setting: {key}[/red]")
-                self.console.print("[yellow]Available keys: temperature, max_tokens, region[/yellow]")
+                self.console.print("[yellow]Available keys: temperature, max_tokens, region, auto_detect[/yellow]")
         
         except ValueError as e:
             self.console.print(f"[red]Invalid value: {e}[/red]")
@@ -532,15 +567,55 @@ Compact Mode: [yellow]{'Enabled' if self.compact_mode else 'Disabled'}[/yellow]
     
     def _process_message(self, user_input: str):
         """Process a user message."""
-        # Prepare content
-        content_blocks = []
+        # Auto-detect content in the input
+        detections = self.auto_detector.extract_all(user_input)
+        
+        # Show what was detected
+        summary = self.auto_detector.format_detection_summary(detections)
+        if summary:
+            self.console.print(f"[dim]{summary}[/dim]")
+        
+        # Prepare content parts
+        content_parts = []
         
         # Add file context if any
         if self.context_files:
             context = self.file_manager.create_context_from_files(self.context_files)
-            text_content = f"{context}\n\n{user_input}"
+            content_parts.append(context)
+        
+        # Auto-fetch URLs if detected
+        if detections['urls']:
+            url_contents = []
+            for url in detections['urls']:
+                self.console.print(f"[dim]Fetching {url}...[/dim]")
+                content = self.web_searcher.fetch_page_content(url)
+                if content:
+                    # Limit content size
+                    if len(content) > 5000:
+                        content = content[:5000] + "..."
+                    url_contents.append(f"=== Content from {url} ===\n{content}\n=== End of {url} ===")
+                else:
+                    self.console.print(f"[yellow]Failed to fetch {url}[/yellow]")
+            
+            if url_contents:
+                content_parts.append("\n\n".join(url_contents))
+        
+        # Add detected files if enabled
+        if detections['file_paths'] and self.auto_detector.auto_detect_files:
+            file_context = self.file_manager.create_context_from_files(detections['file_paths'])
+            if file_context:
+                content_parts.append(file_context)
+        
+        # Combine text content
+        if content_parts:
+            text_content = "\n\n".join(content_parts) + f"\n\n{user_input}"
         else:
             text_content = user_input
+        
+        # Add detected images to context images
+        for img_path in detections['image_paths']:
+            if img_path not in self.context_images:
+                self.context_images.append(img_path)
         
         # Check if we have images to include
         if self.context_images:
