@@ -1,6 +1,8 @@
 """Interactive mode for the AI Code Assistant."""
 
 import sys
+import os
+import subprocess
 import logging
 from pathlib import Path
 from typing import Optional, List, Dict, Any
@@ -51,6 +53,9 @@ class InteractiveMode:
         '/export': 'Export conversation (json/markdown)',
         '/project': 'Show project analysis',
         '/autodiscover': 'Toggle automatic file discovery',
+        '/bash': 'Execute bash command (use /bash <command>)',
+        '/!': 'Shortcut for bash command (use /! <command>)',
+        '/run': 'Run the last code block or command from assistant response',
         '/code': 'Extract and save code blocks',
         '/tree': 'Show directory tree',
         '/compact': 'Toggle compact mode',
@@ -304,6 +309,12 @@ class InteractiveMode:
         
         elif cmd == '/autodiscover':
             self._toggle_autodiscover()
+        
+        elif cmd == '/bash' or cmd == '/!':
+            self._execute_bash(args)
+        
+        elif cmd == '/run':
+            self._run_last_command()
         
         else:
             self.console.print(f"[red]Unknown command: {cmd}[/red]")
@@ -1170,3 +1181,159 @@ Provide ONLY the commit message, no explanation."""
             self.console.print("[dim]I will automatically find relevant files based on your queries[/dim]")
         else:
             self.console.print("[dim]Use /files to manually add files to context[/dim]")
+    
+    def _execute_bash(self, command: str):
+        """Execute a bash command and display output."""
+        if not command:
+            self.console.print("[yellow]Usage: /bash <command> or /! <command>[/yellow]")
+            self.console.print("[yellow]Example: /bash ls -la[/yellow]")
+            self.console.print("[yellow]Example: /! pwd[/yellow]")
+            return
+        
+        # Safety check for dangerous commands
+        dangerous_patterns = [
+            r'\brm\s+-rf\s+/', r'\brm\s+-fr\s+/',  # rm -rf /
+            r'\b>\s*/dev/sd[a-z]', r'\bdd\s+.*of=/dev/sd[a-z]',  # disk operations
+            r'\bmkfs\.', r'\bformat\s+',  # formatting
+            r'\b:\(\)\{\s*:\|\s*:\s*&\s*\}', # fork bomb
+            r'\bsudo\s+rm\s+-rf\s+/', # sudo rm -rf /
+        ]
+        
+        import re
+        for pattern in dangerous_patterns:
+            if re.search(pattern, command, re.IGNORECASE):
+                self.console.print("[red]⚠️  Dangerous command detected![/red]")
+                response = self.session.prompt("Are you sure you want to execute this? (yes/no): ")
+                if response.lower() != 'yes':
+                    self.console.print("[yellow]Command cancelled[/yellow]")
+                    return
+        
+        try:
+            # Show command being executed
+            self.console.print(f"[dim]$ {command}[/dim]")
+            
+            # Handle cd command specially to change working directory
+            if command.strip().startswith('cd '):
+                path = command[3:].strip()
+                # Remove quotes if present
+                if path.startswith('"') and path.endswith('"'):
+                    path = path[1:-1]
+                elif path.startswith("'") and path.endswith("'"):
+                    path = path[1:-1]
+                
+                try:
+                    # Expand ~ and environment variables
+                    path = os.path.expanduser(os.path.expandvars(path))
+                    # Make absolute
+                    if not os.path.isabs(path):
+                        path = os.path.join(os.getcwd(), path)
+                    
+                    os.chdir(path)
+                    self.console.print(f"[green]Changed directory to: {os.getcwd()}[/green]")
+                    return
+                except Exception as e:
+                    self.console.print(f"[red]Failed to change directory: {e}[/red]")
+                    return
+            
+            # Execute command with a timeout
+            import subprocess
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=30,  # 30 second timeout
+                cwd=os.getcwd()
+            )
+            
+            # Display output
+            if result.stdout:
+                self.console.print(result.stdout.rstrip())
+            
+            if result.stderr:
+                self.console.print(f"[red]{result.stderr.rstrip()}[/red]")
+            
+            # Show exit code if non-zero
+            if result.returncode != 0:
+                self.console.print(f"[red]Exit code: {result.returncode}[/red]")
+            
+            # Add to conversation history for context
+            output = result.stdout + (f"\n{result.stderr}" if result.stderr else "")
+            if output.strip():
+                self.conversation.add_message(
+                    "user", 
+                    f"Executed bash command: {command}\nOutput:\n{output[:2000]}"  # Limit output
+                )
+            
+        except subprocess.TimeoutExpired:
+            self.console.print("[red]Command timed out after 30 seconds[/red]")
+        except Exception as e:
+            self.console.print(f"[red]Error executing command: {e}[/red]")
+    
+    def _run_last_command(self):
+        """Run the last command or code block from assistant's response."""
+        # Get the last assistant message
+        messages = self.conversation.get_messages()
+        last_assistant_msg = None
+        
+        for msg in reversed(messages):
+            if msg.role == 'assistant':
+                last_assistant_msg = msg
+                break
+        
+        if not last_assistant_msg:
+            self.console.print("[yellow]No assistant response found[/yellow]")
+            return
+        
+        # Extract code blocks
+        code_blocks = self.code_extractor.extract_code_blocks(last_assistant_msg.content)
+        
+        # Look for bash/shell commands
+        bash_blocks = []
+        for block in code_blocks:
+            if block['language'] in ['bash', 'sh', 'shell', 'console', 'terminal']:
+                bash_blocks.append(block)
+        
+        # Also look for inline commands (lines starting with $ or #)
+        import re
+        inline_commands = re.findall(r'^\s*[$#]\s*(.+)$', last_assistant_msg.content, re.MULTILINE)
+        
+        # Combine all found commands
+        all_commands = []
+        for block in bash_blocks:
+            # Split multi-line commands
+            commands = [cmd.strip() for cmd in block['code'].split('\n') if cmd.strip()]
+            all_commands.extend(commands)
+        
+        all_commands.extend(inline_commands)
+        
+        if not all_commands:
+            self.console.print("[yellow]No executable commands found in the last response[/yellow]")
+            self.console.print("[dim]Tip: I look for code blocks marked as bash/sh/shell or lines starting with $ or #[/dim]")
+            return
+        
+        # If single command, run it
+        if len(all_commands) == 1:
+            self.console.print(f"[green]Running command:[/green] {all_commands[0]}")
+            self._execute_bash(all_commands[0])
+        else:
+            # Multiple commands - let user choose
+            self.console.print("[green]Found multiple commands:[/green]")
+            for i, cmd in enumerate(all_commands, 1):
+                self.console.print(f"  {i}. {cmd}")
+            
+            try:
+                choice = self.session.prompt("Select command number (or 'all' to run all): ")
+                
+                if choice.lower() == 'all':
+                    for cmd in all_commands:
+                        self.console.print(f"\n[green]Running:[/green] {cmd}")
+                        self._execute_bash(cmd)
+                else:
+                    idx = int(choice) - 1
+                    if 0 <= idx < len(all_commands):
+                        self._execute_bash(all_commands[idx])
+                    else:
+                        self.console.print("[red]Invalid selection[/red]")
+            except (ValueError, KeyboardInterrupt):
+                self.console.print("[yellow]Cancelled[/yellow]")
