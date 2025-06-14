@@ -141,8 +141,13 @@ class InteractiveMode:
         self.auto_compact_enabled = True
         
         # Initialize smart context v2 for automatic file discovery
-        self.smart_context = SmartContextV2()
-        self.auto_discover_files = True  # Enable by default
+        try:
+            self.smart_context = SmartContextV2()
+            self.auto_discover_files = True  # Enable by default
+        except Exception as e:
+            logger.warning(f"Failed to initialize smart context: {e}")
+            self.smart_context = None
+            self.auto_discover_files = False
     
     def _create_prompt_style(self) -> Style:
         """Create prompt style."""
@@ -675,7 +680,7 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
         
         # Auto-discover relevant files based on query if enabled
         discovered_files = []
-        if self.auto_discover_files and not self.context_files:
+        if self.auto_discover_files and not self.context_files and self.smart_context:
             # Only auto-discover if no files were manually added
             with self.console.status("[dim]Analyzing query and discovering relevant files...[/dim]", spinner="dots"):
                 discovered_files = self.smart_context.get_relevant_files(user_input, max_files=10)
@@ -684,7 +689,10 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
                 self.console.print(f"[dim]Auto-discovered {len(discovered_files)} relevant files[/dim]")
                 # Show first few files
                 for f in discovered_files[:3]:
-                    rel_path = f.relative_to(self.smart_context.project_analyzer.root_path)
+                    try:
+                        rel_path = f.relative_to(self.smart_context.project_analyzer.root_path)
+                    except:
+                        rel_path = f.name
                     self.console.print(f"[dim]  • {rel_path}[/dim]")
                 if len(discovered_files) > 3:
                     self.console.print(f"[dim]  ... and {len(discovered_files) - 3} more[/dim]")
@@ -1102,6 +1110,10 @@ Provide ONLY the commit message, no explanation."""
     
     def _show_project_info(self):
         """Show project analysis information."""
+        if not self.smart_context:
+            self.console.print("[yellow]Project analysis not available[/yellow]")
+            return
+            
         try:
             with self.console.status("[dim]Analyzing project structure...[/dim]", spinner="dots"):
                 project_info = self.smart_context.project_analyzer.analyze_project()
@@ -1146,6 +1158,10 @@ Provide ONLY the commit message, no explanation."""
     
     def _toggle_autodiscover(self):
         """Toggle automatic file discovery."""
+        if not self.smart_context:
+            self.console.print("[yellow]Auto-discovery not available - smart context initialization failed[/yellow]")
+            return
+            
         self.auto_discover_files = not self.auto_discover_files
         status = "[green]enabled[/green]" if self.auto_discover_files else "[red]disabled[/red]"
         self.console.print(f"Automatic file discovery {status}")
