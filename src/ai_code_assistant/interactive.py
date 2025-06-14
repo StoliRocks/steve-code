@@ -62,7 +62,7 @@ class InteractiveMode:
         '/quit': 'Exit the assistant',
         '/save': 'Save the current conversation',
         '/load': 'Load a previous conversation',
-        '/files': 'Add files to context',
+        '/files': 'Add files to context (Note: files are auto-discovered based on your queries)',
         '/status': 'Show current status',
         '/model': 'Switch model (sonnet-4, sonnet-3.7, opus-4)',
         '/export': 'Export conversation (json/markdown)',
@@ -750,6 +750,10 @@ Be extremely proactive - assume the user wants immediate help with their local c
 If they mention "my" anything, they mean the code in the current directory.
 Do NOT suggest asking for more information - suggest concrete actions.
 
+DEFAULT TO TRUE for requires_code_analysis unless the query is clearly not about code.
+Examples that require code analysis: recommendations, help, improve, review, debug, etc.
+Examples that don't: "what is Python?", "explain git", "how does AWS work?"
+
 Example response:
 {{
   "intent": "User wants code quality recommendations for their application",
@@ -820,40 +824,28 @@ Example response:
         # Prepare content parts
         content_parts = []
         
-        # Auto-discover relevant files based on query if enabled
+        # Auto-discover relevant files based on intent analysis
         discovered_files = []
-        # Force file discovery if intent analysis says we need files
-        should_discover = (self.auto_discover_files and not self.context_files) or (intent_analysis and intent_analysis.get('files_needed'))
+        
+        # ALWAYS discover files if intent analysis says we need them
+        if intent_analysis and intent_analysis.get('requires_code_analysis'):
+            # Intent says we need to analyze code - ALWAYS do it
+            should_discover = True
+        else:
+            # Fallback: still auto-discover if enabled
+            should_discover = self.auto_discover_files
         
         if should_discover:
             # Only auto-discover if no files were manually added
             
             # First, use project analyzer for intelligent suggestions
             if self.project_analyzer:
-                with self.console.status("[dim]Analyzing query and discovering relevant files...[/dim]", spinner="dots"):
+                with self.console.status("[dim]Discovering relevant files for analysis...[/dim]", spinner="dots"):
                     # Try to find files based on the query
                     suggested_files = self.project_analyzer.suggest_files_for_query(user_input, max_suggestions=10)
                     
-                    # Check if this is a code-related query that should trigger analysis
-                    code_intent_keywords = [
-                        'recommendation', 'recommend', 'suggestion', 'suggest', 'advice',
-                        'review', 'improve', 'better', 'analyze', 'optimize', 'refactor', 
-                        'code quality', 'feedback', 'help', 'application', 'app', 'project',
-                        'code', 'program', 'software', 'system', 'architecture', 'design',
-                        'performance', 'security', 'best practice', 'issue', 'problem',
-                        'enhance', 'fix', 'debug', 'test', 'structure'
-                    ]
-                    
-                    # Also check for possessive pronouns that indicate local context
-                    local_context_indicators = ['my', 'our', 'this', 'the']
-                    
-                    query_lower = user_input.lower()
-                    has_code_intent = any(keyword in query_lower for keyword in code_intent_keywords)
-                    has_local_context = any(indicator in query_lower for indicator in local_context_indicators)
-                    
-                    # If the query seems code-related and refers to local context, always analyze
-                    # Also, if user mentions "my" anything, assume they want local code analysis
-                    if (has_code_intent and has_local_context) or (has_code_intent and not suggested_files) or ('my ' in query_lower):
+                    # If intent analysis says we need code analysis, ALWAYS get files
+                    if intent_analysis and intent_analysis.get('requires_code_analysis'):
                         # Add main entry points from project
                         if self.project_info and self.project_info.main_directories:
                             for main_dir in self.project_info.main_directories[:2]:
@@ -865,8 +857,8 @@ Example response:
                                             if len(suggested_files) >= 5:
                                                 break
                         
-                        # If we still don't have files, just grab some Python/JS files from the project
-                        if not suggested_files and self.project_info:
+                        # ALWAYS ensure we have files when code analysis is required
+                        if not suggested_files and self.project_info and intent_analysis and intent_analysis.get('requires_code_analysis'):
                             extensions = {
                                 'python': ['.py'],
                                 'javascript': ['.js', '.ts'],
@@ -888,6 +880,16 @@ Example response:
                                         break
                     
                     discovered_files = suggested_files
+                    
+                    # If intent requires code analysis but we have no files, this is a problem
+                    if not discovered_files and intent_analysis and intent_analysis.get('requires_code_analysis'):
+                        self.console.print("[yellow]Warning: No files found for code analysis. Trying broader search...[/yellow]")
+                        # Just grab ANY Python files as a last resort
+                        for file in self.root_path.rglob('*.py'):
+                            if file.is_file() and 'test' not in str(file).lower() and '__pycache__' not in str(file):
+                                discovered_files.append(file)
+                                if len(discovered_files) >= 3:
+                                    break
             
             # Fallback to smart context if available
             elif self.smart_context:
@@ -1754,7 +1756,11 @@ BEHAVIORAL RULES:
 - Query is vague → Interpret generously and provide comprehensive help
 
 You are not a question-asking assistant. You are a problem-solving coding agent.
-When in doubt, analyze code and provide solutions, don't ask for clarification."""
+When in doubt, analyze code and provide solutions, don't ask for clarification.
+
+CRITICAL: If files are included in the context, you MUST analyze them and provide specific recommendations.
+NEVER say "I need more information" or "Could you share your code" when files are already provided.
+The files in the context ARE the user's application - analyze them immediately."""
         
         # Update system prompt
         self.system_prompt = base_prompt + project_context
