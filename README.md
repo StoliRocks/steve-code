@@ -2,6 +2,8 @@
 
 A self-contained AI code assistant CLI tool that mimics Claude Code's functionality using AWS Bedrock for Claude model access.
 
+> **Disclaimer**: This is a personal project and is not an official AWS product or service. It is not endorsed by or affiliated with Amazon Web Services.
+
 ## Features
 
 - **Interactive Mode**: Chat-like interface with context persistence
