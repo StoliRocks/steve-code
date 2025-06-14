@@ -720,13 +720,50 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
             self.console.print("[yellow]No code blocks found[/yellow]")
             return
         
-        # Save code blocks
+        # Show code blocks and ask for confirmation
         output_path = Path(output_dir) if output_dir else Path.cwd() / "extracted_code"
-        saved_files = self.code_extractor.save_code_blocks(code_blocks, output_path)
         
-        self.console.print(f"[green]Extracted {len(code_blocks)} code block(s)[/green]")
-        for file in saved_files:
-            self.console.print(f"  • {file}")
+        self.console.print(f"\n[bold]Found {len(code_blocks)} code block(s) to save:[/bold]")
+        for i, block in enumerate(code_blocks):
+            filename = block.filename or f"code_block_{i + 1}.{self._get_extension(block.language)}"
+            self.console.print(f"  • {output_path / filename} ({block.language})")
+        
+        # Ask for confirmation
+        self.console.print(f"\n[yellow]Save these {len(code_blocks)} file(s) to {output_path}?[/yellow]")
+        response = self.session.prompt("(y/n) > ").strip().lower()
+        
+        if response == 'y':
+            saved_files = self.code_extractor.save_code_blocks(code_blocks, output_path)
+            self.console.print(f"[green]✓ Saved {len(saved_files)} file(s)[/green]")
+            for file in saved_files:
+                self.console.print(f"  • {file}")
+        else:
+            self.console.print("[yellow]Code extraction cancelled[/yellow]")
+    
+    def _get_extension(self, language: str) -> str:
+        """Get file extension for a language."""
+        extensions = {
+            'python': 'py',
+            'javascript': 'js',
+            'typescript': 'ts',
+            'java': 'java',
+            'cpp': 'cpp',
+            'c': 'c',
+            'go': 'go',
+            'rust': 'rs',
+            'ruby': 'rb',
+            'php': 'php',
+            'shell': 'sh',
+            'bash': 'sh',
+            'html': 'html',
+            'css': 'css',
+            'json': 'json',
+            'yaml': 'yaml',
+            'xml': 'xml',
+            'sql': 'sql',
+            'markdown': 'md',
+        }
+        return extensions.get(language.lower(), 'txt')
     
     def _analyze_intent(self, user_input: str) -> Dict[str, Any]:
         """Use Claude to analyze the user's intent and create an action plan.
