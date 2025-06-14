@@ -4,6 +4,9 @@ import sys
 import os
 import subprocess
 import logging
+import time
+import random
+import threading
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from datetime import datetime
@@ -39,6 +42,17 @@ logger = logging.getLogger(__name__)
 class InteractiveMode:
     """Interactive chat mode for the AI assistant."""
     
+    # Fun verbs for different query types
+    FUN_VERBS = {
+        'debug': ['🐛 Debugging', '🔍 Investigating', '🕵️ Sleuthing', '🔬 Analyzing'],
+        'implement': ['🔨 Building', '🏗️ Constructing', '⚡ Creating', '🎨 Crafting'],
+        'test': ['🧪 Testing', '🔧 Verifying', '✅ Checking', '🎯 Validating'],
+        'refactor': ['♻️ Refactoring', '🛠️ Improving', '✨ Polishing', '🔄 Restructuring'],
+        'explain': ['📚 Explaining', '🎓 Teaching', '💡 Illuminating', '🗣️ Clarifying'],
+        'review': ['👀 Reviewing', '📋 Examining', '🔎 Inspecting', '📝 Evaluating'],
+        'general': ['🤔 Thinking', '💭 Pondering', '🧠 Processing', '⚙️ Computing'],
+    }
+    
     # Interactive commands
     COMMANDS = {
         '/help': 'Show this help message',
@@ -58,6 +72,7 @@ class InteractiveMode:
         '/run': 'Run the last code block or command from assistant response',
         '/code': 'Extract and save code blocks',
         '/tree': 'Show directory tree',
+        '/todo': 'Show task list extracted from conversation',
         '/compact': 'Toggle compact mode',
         '/settings': 'Show or modify settings (use /settings <key> <value>)',
         '/set': 'Set a configuration value (temperature, max_tokens, region, auto_detect)',
@@ -174,12 +189,17 @@ class InteractiveMode:
                 messages = self._prepare_api_messages()
                 stats = self.context_manager.get_context_stats(messages)
                 
-                # Build prompt with context info
-                if stats.usage_percentage >= 70:
-                    color = "red" if stats.usage_percentage >= 80 else "yellow"
-                    prompt_text = f"\n[{color}]({stats.remaining_tokens:,} tokens left)[/{color}] >>> "
-                else:
-                    prompt_text = "\n>>> "
+                # Build context status line
+                context_percent = 100 - stats.usage_percentage
+                context_color = "green" if context_percent > 30 else "yellow" if context_percent > 20 else "red"
+                context_status = f"[{context_color}]Context: {context_percent}% available[/{context_color}]"
+                
+                # Show context status if getting full
+                if stats.usage_percentage >= 50:
+                    self.console.print(f"\n{context_status} (auto-compact at 20%)")
+                
+                # Build prompt
+                prompt_text = "\n>>> "
                 
                 # Get user input
                 user_input = self.session.prompt(
@@ -315,6 +335,9 @@ class InteractiveMode:
         
         elif cmd == '/run':
             self._run_last_command()
+        
+        elif cmd == '/todo':
+            self._show_todos()
         
         else:
             self.console.print(f"[red]Unknown command: {cmd}[/red]")
@@ -832,30 +855,61 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
                 # Display full response
                 self._display_response(response_text)
             else:
-                # Stream directly to console in normal mode
-                # Show thinking indicator briefly
-                with self.console.status("[dim]Thinking...[/dim]", spinner="dots"):
-                    # Start the stream (this will get the first chunk)
+                # Detect query intent for fun verb
+                query_context = self.analyze_query(user_input) if self.smart_context else None
+                intent = query_context.intent if query_context else 'general'
+                verbs = self.FUN_VERBS.get(intent, self.FUN_VERBS['general'])
+                verb = random.choice(verbs)
+                
+                # Start streaming with dynamic status
+                start_time = time.time()
+                token_count = 0
+                stop_streaming = threading.Event()
+                
+                # Shared variable for response length
+                response_info = {'length': 0}
+                
+                def update_status(status_console, verb, start_time, response_info):
+                    """Update status line in a separate thread."""
+                    while not stop_streaming.is_set():
+                        elapsed = int(time.time() - start_time)
+                        # Estimate tokens (rough approximation)
+                        estimated_tokens = response_info['length'] // 4
+                        status_line = f"{verb}... ({elapsed}s · ⚙ {estimated_tokens/1000:.1f}k tokens · [dim]ESC to interrupt[/dim])"
+                        status_console.print(f"\r{status_line}", end="")
+                        time.sleep(0.1)
+                
+                # Create a separate console for status updates
+                from rich.console import Console as StatusConsole
+                status_console = StatusConsole(file=sys.stderr)
+                
+                # Start status thread
+                status_thread = threading.Thread(target=update_status, args=(status_console, verb, start_time, response_info))
+                status_thread.daemon = True
+                status_thread.start()
+                
+                try:
+                    # Start the stream
                     stream = self.bedrock_client.send_message(messages, self.system_prompt)
-                    first_chunk = None
-                    try:
-                        first_chunk = next(stream)
-                    except StopIteration:
-                        pass
-                
-                # Now show the assistant label and start streaming
-                self.console.print("\n[dim]Assistant:[/dim]")
-                
-                # Print first chunk if we got one
-                if first_chunk:
-                    response_text += first_chunk
-                    self.console.print(first_chunk, end="")
-                
-                # Continue with rest of stream
-                for chunk in stream:
-                    response_text += chunk
-                    self.console.print(chunk, end="")
-                self.console.print()  # New line after streaming
+                    
+                    # Show assistant label after a brief delay
+                    self.console.print("\n[dim]Assistant:[/dim]")
+                    
+                    # Stream response
+                    for chunk in stream:
+                        response_text += chunk
+                        response_info['length'] = len(response_text)
+                        self.console.print(chunk, end="")
+                        token_count = len(response_text) // 4  # Rough token estimate
+                    
+                    self.console.print()  # New line after streaming
+                    
+                finally:
+                    # Stop status updates
+                    stop_streaming.set()
+                    status_thread.join(timeout=0.5)
+                    # Clear status line
+                    status_console.print("\r" + " " * 80 + "\r", end="")
             
             # Add to conversation history
             self.conversation.add_message("assistant", response_text)
@@ -1167,6 +1221,26 @@ Provide ONLY the commit message, no explanation."""
         except Exception as e:
             self.console.print(f"[red]Error analyzing project: {e}[/red]")
     
+    def analyze_query(self, query: str):
+        """Simple query analysis to determine intent."""
+        query_lower = query.lower()
+        
+        # Check for intent patterns
+        if any(word in query_lower for word in ['debug', 'fix', 'error', 'bug', 'issue', 'problem']):
+            return type('QueryContext', (), {'intent': 'debug'})
+        elif any(word in query_lower for word in ['implement', 'add', 'create', 'build', 'write']):
+            return type('QueryContext', (), {'intent': 'implement'})
+        elif any(word in query_lower for word in ['test', 'testing', 'verify', 'check']):
+            return type('QueryContext', (), {'intent': 'test'})
+        elif any(word in query_lower for word in ['refactor', 'improve', 'optimize', 'clean']):
+            return type('QueryContext', (), {'intent': 'refactor'})
+        elif any(word in query_lower for word in ['explain', 'what', 'how', 'why', 'understand']):
+            return type('QueryContext', (), {'intent': 'explain'})
+        elif any(word in query_lower for word in ['review', 'analyze', 'audit', 'inspect']):
+            return type('QueryContext', (), {'intent': 'review'})
+        else:
+            return type('QueryContext', (), {'intent': 'general'})
+    
     def _toggle_autodiscover(self):
         """Toggle automatic file discovery."""
         if not self.smart_context:
@@ -1337,3 +1411,52 @@ Provide ONLY the commit message, no explanation."""
                         self.console.print("[red]Invalid selection[/red]")
             except (ValueError, KeyboardInterrupt):
                 self.console.print("[yellow]Cancelled[/yellow]")
+    
+    def _show_todos(self):
+        """Extract and show tasks/todos from conversation."""
+        import re
+        
+        todos = []
+        messages = self.conversation.get_messages()
+        
+        # Patterns to find todos/tasks
+        todo_patterns = [
+            r'(?:TODO|TASK|FIXME):\s*(.+)',
+            r'(?:^|\n)\s*[-*]\s*\[\s*\]\s*(.+)',  # Markdown checkboxes
+            r'(?:^|\n)\s*\d+\.\s*(.+?)(?:\n|$)',  # Numbered lists
+            r'(?:need to|should|must|will)\s+(.+?)(?:\.|$)',  # Action items
+        ]
+        
+        for msg in messages:
+            if msg.role == 'assistant':
+                content = msg.content if isinstance(msg.content, str) else str(msg.content)
+                
+                # Look for explicit todos
+                for pattern in todo_patterns:
+                    matches = re.findall(pattern, content, re.MULTILINE | re.IGNORECASE)
+                    for match in matches:
+                        task = match.strip()
+                        if len(task) > 10 and len(task) < 200:  # Reasonable task length
+                            todos.append(task)
+        
+        if todos:
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_todos = []
+            for todo in todos:
+                if todo.lower() not in seen:
+                    seen.add(todo.lower())
+                    unique_todos.append(todo)
+            
+            # Display todos
+            todo_text = "[bold]📋 Tasks from Conversation[/bold]\n\n"
+            for i, todo in enumerate(unique_todos[:20], 1):  # Limit to 20
+                todo_text += f"  {i}. {todo}\n"
+            
+            if len(unique_todos) > 20:
+                todo_text += f"\n  ... and {len(unique_todos) - 20} more"
+            
+            self.console.print(Panel(todo_text, border_style="blue"))
+        else:
+            self.console.print("[yellow]No specific tasks found in conversation[/yellow]")
+            self.console.print("[dim]Tip: I look for TODO markers, checkboxes, numbered lists, and action phrases[/dim]")
