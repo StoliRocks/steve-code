@@ -24,6 +24,9 @@ A self-contained AI code assistant CLI tool that mimics Claude Code's functional
 - **Context Management**: Track token usage and auto-compact when nearing limits
 - **Smart Prompts**: Shows remaining tokens when context usage is high
 - **Auto-Update**: Check for updates and install new versions from the command line
+- **Verbose Mode**: Control visibility of technical details and implementation info
+- **Background Updates**: Automatic update checks every 30 minutes in interactive mode
+- **Clean Output**: Technical details and file detection hidden by default for cleaner UX
 
 ## Installation
 
@@ -195,8 +198,8 @@ sc -i
 # With specific model
 sc -i --model opus-4
 
-# With compact mode
-sc -i --compact
+# With verbose mode (show technical details)
+sc -i --verbose
 ```
 
 ### Single Command Mode
@@ -232,9 +235,10 @@ When in interactive mode, you can use these commands:
 - `/export <format> <filename>` - Export conversation (json/markdown)
 - `/code [directory]` - Extract and save code blocks from last response
 - `/tree [path]` - Show directory tree
-- `/compact` - Toggle compact display mode
 - `/settings` - Show current settings
-- `/set <key> <value>` - Modify settings (temperature, max_tokens, region)
+- `/verbose` - Toggle verbose mode (show/hide technical details)
+- `/update` - Check for and install updates
+- `/set <key> <value>` - Modify settings (temperature, max_tokens, region, verbose)
 - `/config` - Save current settings to config file
 - `/git` - Show git status
 - `/git diff` - Show unstaged changes
@@ -255,10 +259,8 @@ Options:
   --max-tokens INTEGER                       Maximum tokens in response [default: 128000]
   -i, --interactive                          Start in interactive mode
   -f, --file PATH                           Include file(s) in context (multiple allowed)
-  -c, --compact                             Use compact output mode
   -o, --output PATH                         Save response to file
   --save-code PATH                          Extract and save code blocks to directory
-  --no-stream                               Disable response streaming
   -v, --verbose                             Enable verbose logging
   --version                                 Show version and exit
   --update                                  Check for updates and install if available
@@ -390,6 +392,22 @@ sc -i
 >>> /set auto_compact off  # Disable if you prefer manual management
 ```
 
+### Verbose Mode
+
+Control how much technical detail you see:
+
+```bash
+sc -i
+>>> /verbose  # Toggle verbose mode
+# Now file detection, XML blocks, and implementation details are shown
+
+>>> /set verbose off  # Disable verbose mode
+# Clean output - technical details hidden
+
+# Start with verbose mode enabled
+sc -i --verbose
+```
+
 ## Project Structure
 
 ```
@@ -410,6 +428,7 @@ steve-code/
 │       ├── auto_detection.py    # Auto-detect URLs/images
 │       ├── context_manager.py   # Token tracking & compaction
 │       ├── update_checker.py    # Version update checking
+│       ├── response_processor.py # Clean AI responses for display
 │       └── version.py           # Version information
 ├── tests/                      # Unit tests
 ├── requirements.txt            # Python dependencies
@@ -482,9 +501,17 @@ sc --check-update
 
 # Update to the latest version
 sc --update
+
+# In interactive mode
+>>> /update  # Check and install updates immediately
 ```
 
-Updates are checked automatically when starting interactive mode. The tool will notify you if a new version is available.
+Updates are checked automatically:
+- On startup when entering interactive mode
+- Every 30 minutes while running in interactive mode
+- The tool will notify you non-intrusively when a new version is available
+
+Updates install to your Python environment (site-packages), not your working directory.
 
 ## Contributing
 
