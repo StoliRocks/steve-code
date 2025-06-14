@@ -725,8 +725,90 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
         for file in saved_files:
             self.console.print(f"  • {file}")
     
+    def _analyze_intent(self, user_input: str) -> Dict[str, Any]:
+        """Use Claude to analyze the user's intent and create an action plan.
+        
+        Args:
+            user_input: The user's query
+            
+        Returns:
+            Dictionary with intent analysis and action plan
+        """
+        # Create a quick intent analysis prompt
+        intent_prompt = f"""As an intelligent coding assistant, analyze this user query and determine their intent:
+Query: "{user_input}"
+
+Project context: {self.project_summary if self.project_summary else "Working in a code repository"}
+
+Provide a JSON response with:
+1. "intent": Brief description of what the user wants
+2. "requires_code_analysis": true/false - whether this needs local code analysis
+3. "suggested_actions": List of 2-5 specific actions to take
+4. "files_needed": true/false - whether we should auto-discover files
+
+Be extremely proactive - assume the user wants immediate help with their local code.
+If they mention "my" anything, they mean the code in the current directory.
+Do NOT suggest asking for more information - suggest concrete actions.
+
+Example response:
+{{
+  "intent": "User wants code quality recommendations for their application",
+  "requires_code_analysis": true,
+  "suggested_actions": [
+    "Analyze main application files for code quality issues",
+    "Check for security vulnerabilities",
+    "Review architecture and design patterns",
+    "Suggest performance optimizations",
+    "Identify testing gaps"
+  ],
+  "files_needed": true
+}}"""
+
+        try:
+            # Quick API call for intent analysis
+            messages = [Message(role="user", content=intent_prompt)]
+            response_text = ""
+            
+            for chunk in self.bedrock_client.send_message(messages, stream=True):
+                response_text += chunk
+            
+            # Try to parse JSON from response
+            import json
+            import re
+            
+            # Extract JSON from response - handle nested objects
+            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if json_match:
+                intent_data = json.loads(json_match.group())
+                return intent_data
+            
+        except Exception as e:
+            logger.debug(f"Intent analysis failed: {e}")
+        
+        # Fallback to simple analysis
+        return {
+            "intent": "Process user query",
+            "requires_code_analysis": any(word in user_input.lower() for word in ['my', 'code', 'application', 'project']),
+            "suggested_actions": ["Respond to user query"],
+            "files_needed": 'my' in user_input.lower()
+        }
+    
     def _process_message(self, user_input: str):
         """Process a user message."""
+        # First, analyze intent if it seems code-related
+        intent_analysis = None
+        if any(indicator in user_input.lower() for indicator in ['my', 'code', 'app', 'project', 'recommend', 'suggest', 'help']):
+            with self.console.status("[dim]Understanding your request...[/dim]", spinner="dots"):
+                intent_analysis = self._analyze_intent(user_input)
+            
+            if intent_analysis.get('requires_code_analysis'):
+                # Show the analysis
+                self.console.print(f"[cyan]Intent: {intent_analysis['intent']}[/cyan]")
+                if intent_analysis.get('suggested_actions'):
+                    self.console.print("[green]Planning to:[/green]")
+                    for action in intent_analysis['suggested_actions']:
+                        self.console.print(f"  • {action}")
+        
         # Auto-detect content in the input
         detections = self.auto_detector.extract_all(user_input)
         
@@ -740,7 +822,10 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
         
         # Auto-discover relevant files based on query if enabled
         discovered_files = []
-        if self.auto_discover_files and not self.context_files:
+        # Force file discovery if intent analysis says we need files
+        should_discover = (self.auto_discover_files and not self.context_files) or (intent_analysis and intent_analysis.get('files_needed'))
+        
+        if should_discover:
             # Only auto-discover if no files were manually added
             
             # First, use project analyzer for intelligent suggestions
@@ -868,6 +953,13 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
             file_context = self.file_manager.create_context_from_files(detections['file_paths'])
             if file_context:
                 content_parts.append(file_context)
+        
+        # Add intent analysis to context if available
+        if intent_analysis and intent_analysis.get('requires_code_analysis'):
+            intent_context = f"\n[Intent Analysis]\nUser Intent: {intent_analysis['intent']}\nPlanned Actions:\n"
+            for action in intent_analysis.get('suggested_actions', []):
+                intent_context += f"- {action}\n"
+            content_parts.insert(0, intent_context)
         
         # Combine text content
         if content_parts:
@@ -1645,15 +1737,24 @@ Provide ONLY the commit message, no explanation."""
         base_prompt = self.bedrock_client.get_default_system_prompt(interactive=True)
         
         # Add project-specific context
-        project_context = f"""\n\nYou are operating in a {self.project_info.project_type} project.\n{self.project_summary}\n\nCRITICAL INSTRUCTIONS:
-1. When the user asks ANYTHING about "my" application, code, project, or system - they are ALWAYS referring to the code in the current directory
-2. When files are included in the context, ALWAYS analyze them thoroughly and provide specific, actionable recommendations
-3. NEVER ask for clarification about what application they mean - assume it's the local project
-4. Be proactive: if the user asks for recommendations, suggestions, or help - immediately analyze the included files and provide concrete feedback
-5. Focus on actual code issues you can see in the files, not generic advice
-6. If no files are included but the query is about code, tell the user you'll analyze their files and suggest using /files or enabling auto-discovery
+        project_context = f"""\n\nYou are operating in a {self.project_info.project_type} project.\n{self.project_summary}\n\nCRITICAL INSTRUCTIONS - YOU ARE AN INTELLIGENT CODING AGENT:
 
-Remember: The user has already provided their code context. They want specific analysis of THEIR code, not generic programming advice."""
+1. NEVER ask clarifying questions - make intelligent assumptions and take action
+2. When the user mentions "my" ANYTHING - they mean the code in the current directory
+3. Create actionable TODO lists and concrete recommendations, not questions
+4. If the user's intent is unclear, interpret it in the most helpful way possible
+5. Always analyze included files thoroughly and provide specific feedback
+6. Be extremely proactive - if you think the user might want something, just do it
+7. Focus on actual code in the files, not generic advice
+
+BEHAVIORAL RULES:
+- User asks about "my application" → Analyze their actual code files
+- User wants "recommendations" → Provide a numbered list of specific improvements
+- User seems stuck → Create a step-by-step action plan
+- Query is vague → Interpret generously and provide comprehensive help
+
+You are not a question-asking assistant. You are a problem-solving coding agent.
+When in doubt, analyze code and provide solutions, don't ask for clarification."""
         
         # Update system prompt
         self.system_prompt = base_prompt + project_context
