@@ -6,7 +6,7 @@ A self-contained AI code assistant CLI tool that mimics Claude Code's functional
 
 ## Features
 
-- **Interactive Mode**: Chat-like interface with context persistence
+- **Interactive Mode (Default)**: Chat-like interface with context persistence
 - **Multiple Claude Models**: Support for Claude 4 Sonnet, 3.7 Sonnet, and 4 Opus
 - **File Context**: Include files in your prompts for code review and analysis
 - **Code Extraction**: Automatically detects and saves code blocks from responses
@@ -178,28 +178,28 @@ The assistant supports persistent configuration through multiple methods:
 
 3. **Command-line Arguments**: Override all other settings
    ```bash
-   sc -i --model sonnet-4 --temperature 0.9
+   sc --model sonnet-4 --temperature 0.9
    ```
 
 Priority order: Command-line args > Environment variables > Config file > Defaults
 
 ## Usage
 
-### Interactive Mode
+### Interactive Mode (Default)
 
 Start an interactive chat session:
 
 ```bash
-steve-code -i
+steve-code
 
 # Or use the short alias
-sc -i
+sc
 
 # With specific model
-sc -i --model opus-4
+sc --model opus-4
 
 # With verbose mode (show technical details)
-sc -i --verbose
+sc --verbose
 ```
 
 ### Single Command Mode
@@ -287,7 +287,7 @@ sc -f src/main.py -f src/utils.py -f tests/test_main.py "Are my tests comprehens
 sc --save-code ./generated "Create a Python class for managing a todo list with SQLite"
 
 # Interactive coding session
-sc -i
+sc
 >>> Create a REST API using FastAPI for a blog system
 >>> /code ./api_code  # Save generated code blocks
 ```
@@ -299,7 +299,7 @@ sc -i
 sc "Explain how async/await works in Python with examples"
 
 # Export conversation for documentation
-sc -i
+sc
 >>> Explain the architecture of a microservices system
 >>> /export markdown architecture_notes.md
 ```
@@ -307,7 +307,7 @@ sc -i
 ### File Context in Interactive Mode
 
 ```bash
-sc -i
+sc
 >>> /files src/calculator.py tests/test_calculator.py
 >>> How can I improve the test coverage for my calculator module?
 >>> /tree src  # View project structure
@@ -316,7 +316,7 @@ sc -i
 ### Git Integration
 
 ```bash
-sc -i
+sc
 >>> /git  # Check current status
 >>> /git diff  # Review changes
 >>> Make the error messages more descriptive
@@ -326,7 +326,7 @@ sc -i
 ### Web Search
 
 ```bash
-sc -i
+sc
 >>> /search python async best practices
 >>> How do I implement the rate limiting pattern mentioned in result 2?
 ```
@@ -334,7 +334,7 @@ sc -i
 ### Visual Analysis
 
 ```bash
-sc -i
+sc
 >>> /screenshot  # Capture current screen
 >>> What's wrong with this error dialog?
 
@@ -347,7 +347,7 @@ sc -i
 When you include a file, Steve Code automatically includes related files:
 
 ```bash
-sc -i
+sc
 >>> /files src/main.py  # Also includes imports, tests, and config files
 >>> Review this code and its dependencies
 ```
@@ -357,7 +357,7 @@ sc -i
 Steve Code automatically detects and processes URLs and images in your messages:
 
 ```bash
-sc -i
+sc
 >>> Explain the rate limiting in https://api.example.com/docs/rate-limits
 # Automatically fetches and includes the webpage content
 
@@ -381,7 +381,7 @@ Control auto-detection with:
 Steve Code automatically tracks your conversation context and helps manage token limits:
 
 ```bash
-sc -i
+sc
 >>> /status  # View current token usage
 # Shows: Tokens: 15,234/128,000 (11.9% used, 112,766 remaining)
 
@@ -397,7 +397,7 @@ sc -i
 Control how much technical detail you see:
 
 ```bash
-sc -i
+sc
 >>> /verbose  # Toggle verbose mode
 # Now file detection, XML blocks, and implementation details are shown
 
@@ -405,7 +405,7 @@ sc -i
 # Clean output - technical details hidden
 
 # Start with verbose mode enabled
-sc -i --verbose
+sc --verbose
 ```
 
 ## Project Structure
