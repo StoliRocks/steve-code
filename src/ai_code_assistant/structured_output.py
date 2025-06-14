@@ -58,7 +58,11 @@ class TodoItem:
             "high": "yellow"
         }[self.priority]
         
-        return f"{checkbox} [{priority_color}]{self.content}[/{priority_color}]"
+        # Add strikethrough for completed items
+        if self.status == "completed":
+            return f"{checkbox} [strike {priority_color}]{self.content}[/strike {priority_color}]"
+        else:
+            return f"{checkbox} [{priority_color}]{self.content}[/{priority_color}]"
 
 
 class StructuredOutput:
@@ -267,8 +271,10 @@ class StructuredOutput:
         # ESC hint
         status_parts.append("[dim]ESC to interrupt[/dim]")
         
-        # Display
-        self.console.print("\r" + " · ".join(status_parts), end="")
+        # Clear line and display
+        status_line = " · ".join(status_parts)
+        # Use ANSI escape codes to clear the line properly
+        self.console.print(f"\r\033[K{status_line}", end="")
     
     def create_summary_panel(self, title: str, items: List[str]) -> Panel:
         """Create a summary panel with items.

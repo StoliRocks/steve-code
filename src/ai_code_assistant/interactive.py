@@ -6,7 +6,6 @@ import subprocess
 import logging
 import time
 import random
-import threading
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime
@@ -22,6 +21,7 @@ from rich.syntax import Syntax
 from rich.panel import Panel
 from rich.text import Text
 from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.live import Live
 
 from .bedrock_client import BedrockClient, ModelType, Message
 from .conversation import ConversationHistory
@@ -74,6 +74,7 @@ class InteractiveMode:
         '/code': 'Extract and save code blocks',
         '/tree': 'Show directory tree',
         '/todo': 'Show task list extracted from conversation',
+        '/todo done <number>': 'Mark a todo as completed',
         '/compact': 'Toggle compact mode',
         '/settings': 'Show or modify settings (use /settings <key> <value>)',
         '/set': 'Set a configuration value (temperature, max_tokens, region, auto_detect)',
@@ -344,7 +345,10 @@ class InteractiveMode:
             self._run_last_command()
         
         elif cmd == '/todo':
-            self._show_todos()
+            if args.startswith('done '):
+                self._mark_todo_done(args[5:])
+            else:
+                self._show_todos()
         
         else:
             self.console.print(f"[red]Unknown command: {cmd}[/red]")
@@ -723,27 +727,12 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
         discovered_files = []
         if self.auto_discover_files and not self.context_files and self.smart_context:
             # Only auto-discover if no files were manually added
-            self.structured_output.start_operation("Analyzing query and discovering relevant files")
-            
-            with self.console.status("[dim]Searching codebase...[/dim]", spinner="dots"):
+            with self.console.status("[dim]Analyzing query and discovering relevant files...[/dim]", spinner="dots"):
                 discovered_files = self.smart_context.get_relevant_files(user_input, max_files=10)
             
             if discovered_files:
-                # Show discovered files with structured output
-                for f in discovered_files:
-                    try:
-                        rel_path = str(f.relative_to(self.smart_context.project_analyzer.root_path))
-                    except:
-                        rel_path = f.name
-                    
-                    update = self.structured_output.add_update(
-                        action="Discovered",
-                        target=rel_path,
-                        details=f"Size: {f.stat().st_size:,} bytes" if f.exists() else None
-                    )
-                    self.structured_output.complete_update(update)
-                
-                self.console.print(f"\n  [green]✓ Found {len(discovered_files)} relevant files[/green]")
+                # Just show a brief summary
+                self.console.print(f"[dim]Auto-discovered {len(discovered_files)} relevant files[/dim]")
         
         # Add file context (manual files take precedence over discovered)
         files_to_include = self.context_files if self.context_files else discovered_files
@@ -875,65 +864,50 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
                 verbs = self.FUN_VERBS.get(intent, self.FUN_VERBS['general'])
                 verb = random.choice(verbs)
                 
-                # Start streaming with dynamic status
+                # Start streaming with Live display
                 start_time = time.time()
-                token_count = 0
-                stop_streaming = threading.Event()
                 
-                # Shared variable for response length
-                response_info = {'length': 0}
+                # Create a status panel that will be updated
+                def generate_status():
+                    elapsed = time.time() - start_time
+                    estimated_tokens = len(response_text) // 4
+                    context_percent = 100 - stats.usage_percentage
+                    
+                    # Build status line
+                    status_parts = []
+                    status_parts.append(f"{verb}... ({int(elapsed)}s)")
+                    status_parts.append(f"⚙ {estimated_tokens/1000:.1f}k tokens")
+                    
+                    # Context with color
+                    context_color = "green" if context_percent > 30 else "yellow" if context_percent > 20 else "red"
+                    status_parts.append(f"[{context_color}]📊 {context_percent}%[/{context_color}]")
+                    
+                    if context_percent <= 30:
+                        status_parts.append("[yellow]⚠ auto-compact at 20%[/yellow]")
+                    
+                    status_parts.append("[dim]ESC to interrupt[/dim]")
+                    
+                    return " · ".join(status_parts)
                 
-                def update_status(status_console, verb, start_time, response_info, stats):
-                    """Update status line in a separate thread."""
-                    while not stop_streaming.is_set():
-                        elapsed = time.time() - start_time
-                        # Estimate tokens (rough approximation)
-                        estimated_tokens = response_info['length'] // 4
-                        
-                        # Get current context percentage
-                        context_percent = 100 - stats.usage_percentage
-                        
-                        # Use structured output for status line
-                        self.structured_output.show_status_line(
-                            verb=verb,
-                            elapsed=elapsed,
-                            tokens=estimated_tokens,
-                            context_percent=int(context_percent),
-                            auto_compact_at=20
-                        )
-                        time.sleep(0.1)
-                
-                # Create a separate console for status updates
-                from rich.console import Console as StatusConsole
-                status_console = StatusConsole(file=sys.stderr)
-                
-                # Start status thread
-                status_thread = threading.Thread(target=update_status, args=(status_console, verb, start_time, response_info, stats))
-                status_thread.daemon = True
-                status_thread.start()
-                
-                try:
+                # Use Live display for real-time updates
+                with Live(generate_status(), console=self.console, refresh_per_second=4) as live:
                     # Start the stream
                     stream = self.bedrock_client.send_message(messages, self.system_prompt)
                     
-                    # Show assistant label after a brief delay
-                    self.console.print("\n[dim]Assistant:[/dim]")
+                    # Brief pause to show status
+                    time.sleep(0.2)
                     
-                    # Stream response
-                    for chunk in stream:
-                        response_text += chunk
-                        response_info['length'] = len(response_text)
-                        self.console.print(chunk, end="")
-                        token_count = len(response_text) // 4  # Rough token estimate
-                    
-                    self.console.print()  # New line after streaming
-                    
-                finally:
-                    # Stop status updates
-                    stop_streaming.set()
-                    status_thread.join(timeout=0.5)
-                    # Clear status line
-                    status_console.print("\r" + " " * 80 + "\r", end="")
+                    # Clear the status and show assistant label
+                    live.stop()
+                
+                # Now stream the response normally
+                self.console.print("\n[dim]Assistant:[/dim]")
+                
+                for chunk in stream:
+                    response_text += chunk
+                    self.console.print(chunk, end="")
+                
+                self.console.print()  # New line after streaming
             
             # Add to conversation history
             self.conversation.add_message("assistant", response_text)
@@ -1533,3 +1507,19 @@ Provide ONLY the commit message, no explanation."""
                 unique_todos.append((todo, priority))
         
         return unique_todos
+    
+    def _mark_todo_done(self, todo_num: str):
+        """Mark a todo as completed."""
+        try:
+            num = int(todo_num) - 1
+            if 0 <= num < len(self.current_todos):
+                self.current_todos[num].status = "completed"
+                self.console.print(f"[green]✓ Marked todo #{num + 1} as completed:[/green]")
+                self.console.print(f"  {self.current_todos[num].format()}")
+                
+                # Show updated todo list
+                self.structured_output.update_todos(self.current_todos)
+            else:
+                self.console.print(f"[red]Invalid todo number. Use /todo to see the list.[/red]")
+        except ValueError:
+            self.console.print("[red]Please provide a valid number.[/red]")
