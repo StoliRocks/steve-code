@@ -44,6 +44,24 @@ You are running in a CLI environment where users can:
 4. Structure responses with clear sections using markdown headers when appropriate
 
 5. For multi-step solutions, use numbered lists or bullet points
+
+6. When creating files or running commands, use structured XML format:
+   <actions>
+     <action type="command">
+       <description>Create directory structure</description>
+       <command>mkdir -p cdk/lib cdk/bin</command>
+     </action>
+     <action type="file">
+       <description>Create package.json</description>
+       <path>cdk/package.json</path>
+       <content><![CDATA[
+{
+  "name": "cdk",
+  "version": "0.1.0"
+}
+]]></content>
+     </action>
+   </actions>
 </formatting_guidelines>
 
 <behavioral_guidelines>

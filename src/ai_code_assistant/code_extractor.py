@@ -41,9 +41,17 @@ class CodeExtractor:
         """
         code_blocks = []
         
+        # Split text into lines to track line numbers
+        lines = text.split('\n')
+        current_line = 0
+        
         for match in self.CODE_BLOCK_PATTERN.finditer(text):
             language = match.group('lang') or 'text'
             content = match.group('code')
+            
+            # Calculate line number where this match starts
+            match_start = match.start()
+            line_number = text[:match_start].count('\n') + 1
             
             # Check for filename in the code content
             filename = None
@@ -56,7 +64,8 @@ class CodeExtractor:
             code_blocks.append(CodeBlock(
                 language=language,
                 content=content,
-                filename=filename
+                filename=filename,
+                line_number=line_number
             ))
         
         return code_blocks

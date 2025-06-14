@@ -60,6 +60,12 @@ class ActionExecutor:
         # Extract code blocks that look like file contents
         code_blocks = self.code_extractor.extract_code_blocks(response)
         
+        # Debug: log response snippet and code blocks found
+        if not code_blocks:
+            logger.debug("No code blocks found in response")
+        else:
+            logger.debug(f"Found {len(code_blocks)} code blocks")
+            
         # Look for file path indicators before code blocks
         lines = response.split('\n')
         used_blocks = set()  # Track which code blocks we've assigned
@@ -67,10 +73,14 @@ class ActionExecutor:
         for i, line in enumerate(lines):
             # Match patterns like "### package.json" or "**lib/lambda/app.py**" or "lib/lambda/app.py"
             file_patterns = [
-                r'^#{1,3}\s*(.+?)$',        # ### filename
+                r'^#{1,6}\s*(.+?)$',         # # to ###### filename
                 r'^\*{2}(.+?)\*{2}$',        # **filename**
+                r'^`(.+?)`:\s*$',            # `filename`:
                 r'^`(.+?)`$',                # `filename`
-                r'^(.+?):?\s*$',             # filename: or just filename
+                r'^File:\s*(.+?)$',          # File: filename
+                r'^Create\s+(.+?)$',         # Create filename
+                r'^(.+?):$',                 # filename:
+                r'^\d+\.\s*(.+?)$',          # 1. filename
             ]
             
             potential_path = None
@@ -81,13 +91,69 @@ class ActionExecutor:
                     break
             
             if potential_path:
-                # Check if it looks like a file path
-                if ('.' in potential_path and not potential_path.startswith('#')) or '/' in potential_path:
-                    # Look for the next unused code block
+                # Check if it looks like a file path - be more lenient
+                # Accept paths with extensions, paths with slashes, or common filenames
+                common_files = [
+                    'makefile', 'dockerfile', 'readme', 'license', 'changelog',
+                    'package.json', 'tsconfig.json', '.gitignore', '.eslintrc.json',
+                    'jest.config.js', 'cdk.json', '.npmignore'
+                ]
+                
+                is_file_path = (
+                    ('.' in potential_path and not potential_path.startswith('#')) or 
+                    '/' in potential_path or
+                    potential_path.lower() in common_files or
+                    potential_path.lower().replace('-', '').replace('_', '') in [f.replace('-', '').replace('_', '') for f in common_files]
+                )
+                
+                if is_file_path:
+                    # Look for the next unused code block within the next 10 lines
                     for j, block in enumerate(code_blocks):
-                        if j not in used_blocks and (not block.line_number or block.line_number > i):
-                            # This code block likely belongs to this file
-                            file_path = self.root_path / potential_path
+                        if j not in used_blocks:
+                            # Check if the code block is reasonably close to this file path
+                            block_line = getattr(block, 'line_number', i + 1)
+                            if block_line > i and block_line <= i + 10:
+                                # This code block likely belongs to this file
+                                file_path = self.root_path / potential_path
+                                file_actions.append(FileAction(
+                                    action_type='create',
+                                    file_path=file_path,
+                                    content=block.content,
+                                    language=block.language
+                                ))
+                                used_blocks.add(j)
+                                break
+        
+        # Also look for any orphaned code blocks that might be files
+        # This catches cases where the file path isn't immediately before the code
+        for j, block in enumerate(code_blocks):
+            if j not in used_blocks and block.filename:
+                # This block has an embedded filename
+                file_path = self.root_path / block.filename
+                file_actions.append(FileAction(
+                    action_type='create',
+                    file_path=file_path,
+                    content=block.content,
+                    language=block.language
+                ))
+                used_blocks.add(j)
+        
+        # Final fallback: Look for common file patterns in the entire response
+        # This helps catch cases where formatting isn't standard
+        if not file_actions:
+            file_mention_pattern = r'(?:^|\n)(?:create|Create|file|File)?\s*(?:the\s+)?(?:following\s+)?(?:file\s+)?["\']?([a-zA-Z0-9_\-./]+\.(?:json|ts|js|py|yaml|yml|md|txt|sh|dockerfile|makefile))["\']?'
+            
+            for match in re.finditer(file_mention_pattern, response, re.IGNORECASE | re.MULTILINE):
+                potential_file = match.group(1)
+                # Find the next unused code block after this mention
+                match_pos = match.start()
+                match_line = response[:match_pos].count('\n')
+                
+                for j, block in enumerate(code_blocks):
+                    if j not in used_blocks:
+                        block_line = getattr(block, 'line_number', 0)
+                        if block_line > match_line:
+                            file_path = self.root_path / potential_file
                             file_actions.append(FileAction(
                                 action_type='create',
                                 file_path=file_path,
@@ -106,13 +172,43 @@ class ActionExecutor:
             for cmd in commands:
                 cmd = cmd.strip()
                 if cmd and not cmd.startswith('#'):
-                    # Check if it's a file operation command
-                    if any(op in cmd for op in ['mkdir', 'touch', 'cp', 'mv']):
+                    # Check if it's a file operation or npm/cdk command
+                    if any(op in cmd for op in ['mkdir', 'touch', 'cp', 'mv', 'cd', 'npm', 'npx', 'cdk', 'node']):
                         command_actions.append(CommandAction(
                             command=cmd,
-                            description="File system operation"
+                            description="Command execution"
+                        ))
+                    # Also capture npm/cdk commands
+                    elif any(op in cmd for op in ['npm', 'cdk', 'npx']):
+                        command_actions.append(CommandAction(
+                            command=cmd,
+                            description="Package/CDK operation"
                         ))
         
+        # Fallback: if we didn't match any files but have code blocks, try to extract from content
+        if not file_actions and code_blocks:
+            # Look for file paths mentioned anywhere in the response
+            file_mention_pattern = r'(?:^|\s)([\w\-]+(?:/[\w\-]+)*\.(?:json|js|ts|tsx|py|md|yml|yaml|txt|gitignore))(?:\s|$|:)'
+            for match in re.finditer(file_mention_pattern, response, re.MULTILINE):
+                file_path_str = match.group(1)
+                # Find unused code block that might belong to this file
+                for j, block in enumerate(code_blocks):
+                    if j not in used_blocks:
+                        file_path = self.root_path / file_path_str
+                        file_actions.append(FileAction(
+                            action_type='create',
+                            file_path=file_path,
+                            content=block.content,
+                            language=block.language
+                        ))
+                        used_blocks.add(j)
+                        break
+        
+        # Debug output if no actions found
+        if not file_actions and not command_actions:
+            logger.debug("No actions detected in response")
+            logger.debug(f"Response preview: {response[:200]}...")
+            
         return file_actions, command_actions
     
     def display_actions_summary(self, file_actions: List[FileAction], 
@@ -127,6 +223,8 @@ class ActionExecutor:
             True if user confirms, False otherwise
         """
         if not file_actions and not command_actions:
+            # Debug: log when no actions found
+            self.console.print("[dim]No executable actions detected in response[/dim]")
             return False
             
         self.console.print("\n[bold blue]Detected Actions:[/bold blue]")
@@ -135,12 +233,20 @@ class ActionExecutor:
             self.console.print("\n[bold]Commands to execute:[/bold]")
             for cmd in command_actions:
                 self.console.print(f"  • {cmd.command}")
+                if cmd.description:
+                    self.console.print(f"    [dim]{cmd.description}[/dim]")
                 
         if file_actions:
             self.console.print("\n[bold]Files to create/modify:[/bold]")
             for action in file_actions:
-                rel_path = action.file_path.relative_to(self.root_path)
+                try:
+                    rel_path = action.file_path.relative_to(self.root_path)
+                except ValueError:
+                    # Path is not relative to root, show absolute
+                    rel_path = action.file_path
                 self.console.print(f"  • {action.action_type}: {rel_path}")
+                if action.language:
+                    self.console.print(f"    [dim]Language: {action.language}[/dim]")
         
         return Confirm.ask("\n[yellow]Execute these actions?[/yellow]", default=True)
     

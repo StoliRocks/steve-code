@@ -38,6 +38,8 @@ from .smart_context_v2 import SmartContextV2
 from .structured_output import StructuredOutput, UpdateItem, TodoItem
 from .action_executor import ActionExecutor
 from .collapsible_output import CollapsibleOutput
+from .structured_action_parser import StructuredActionParser
+from .action_reprocessor import ActionReprocessor
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +197,10 @@ class InteractiveMode:
         
         # Initialize collapsible output
         self.collapsible_output = CollapsibleOutput(self.console)
+        
+        # Initialize structured action parser
+        self.action_parser = StructuredActionParser()
+        self.action_reprocessor = ActionReprocessor(self.bedrock_client)
         
         # Track current todos
         self.current_todos: List[TodoItem] = []
@@ -1305,16 +1311,115 @@ Provide ONLY the commit message, no explanation."""
                 # Fallback to plain text
                 self.console.print(response)
         
-        # Extract and offer to execute actions
-        file_actions, command_actions = self.action_executor.extract_actions_from_response(response)
+        # First try to extract structured actions
+        structured_actions, clean_response = self.action_parser.extract_actions(response)
         
-        if file_actions or command_actions:
-            # Show what actions were detected
-            if self.action_executor.display_actions_summary(file_actions, command_actions):
-                # User confirmed - execute actions
-                self.action_executor.execute_all_actions(file_actions, command_actions)
+        if structured_actions:
+            # We have structured actions - execute them step by step
+            self.console.print("\n[bold blue]Structured Actions Detected:[/bold blue]")
+            for i, action in enumerate(structured_actions, 1):
+                self.console.print(f"{i}. {action.description}")
+            
+            if self._confirm_action("\nExecute these actions step by step?"):
+                self._execute_structured_actions(structured_actions)
             else:
                 self.console.print("[yellow]Actions not executed[/yellow]")
+        else:
+            # Check if response looks like it has unstructured actions
+            if self.action_parser.detect_unstructured_actions(response):
+                self.console.print("\n[yellow]Detected file/command instructions in response[/yellow]")
+                
+                if self._confirm_action("Would you like me to extract and execute these actions?"):
+                    # Reprocess the response to get structured actions
+                    with self.console.status("[dim]Extracting structured actions...[/dim]", spinner="dots"):
+                        structured_actions = self.action_reprocessor.reprocess_for_actions(response)
+                    
+                    if structured_actions:
+                        self.console.print(f"\n[green]Extracted {len(structured_actions)} actions[/green]")
+                        self._execute_structured_actions(structured_actions)
+                    else:
+                        # Fall back to old regex-based approach
+                        self.console.print("[yellow]Could not extract structured actions, trying pattern matching...[/yellow]")
+                        file_actions, command_actions = self.action_executor.extract_actions_from_response(response)
+                        
+                        if file_actions or command_actions:
+                            if self.action_executor.display_actions_summary(file_actions, command_actions):
+                                self.action_executor.execute_all_actions(file_actions, command_actions)
+                        else:
+                            self.console.print("[red]No actions could be extracted[/red]")
+                            self.console.print("[dim]Tip: You can use /code to manually extract code blocks[/dim]")
+    
+    def _confirm_action(self, prompt: str) -> bool:
+        """Ask for confirmation with a yes/no prompt."""
+        from rich.prompt import Confirm
+        return Confirm.ask(prompt, default=True)
+    
+    def _execute_structured_actions(self, actions: List[Any]):
+        """Execute structured actions step by step."""
+        from rich.prompt import Confirm
+        
+        for i, action in enumerate(actions):
+            self.console.print(f"\n[bold]Step {i+1} of {len(actions)}:[/bold]")
+            self.console.print(f"[cyan]{action.description}[/cyan]")
+            
+            if action.action_type == 'command':
+                self.console.print(f"Command: [yellow]{action.content['command']}[/yellow]")
+                if Confirm.ask("Execute this command?", default=True):
+                    # Execute the command
+                    import subprocess
+                    try:
+                        result = subprocess.run(
+                            action.content['command'],
+                            shell=True,
+                            capture_output=True,
+                            text=True,
+                            cwd=self.root_path
+                        )
+                        if result.returncode == 0:
+                            self.console.print("[green]✓ Command executed successfully[/green]")
+                            if result.stdout:
+                                self.console.print(f"[dim]{result.stdout}[/dim]")
+                        else:
+                            self.console.print(f"[red]✗ Command failed[/red]")
+                            if result.stderr:
+                                self.console.print(f"[red]{result.stderr}[/red]")
+                    except Exception as e:
+                        from rich.markup import escape
+                        self.console.print(f"[red]Error: {escape(str(e))}[/red]")
+                else:
+                    self.console.print("[yellow]Skipped[/yellow]")
+                    
+            elif action.action_type == 'file':
+                file_path = self.root_path / action.content['path']
+                self.console.print(f"File: [green]{action.content['path']}[/green]")
+                
+                # Show content preview
+                content = action.content['content']
+                lines = content.split('\\n')
+                preview_lines = lines[:5]
+                if len(lines) > 5:
+                    self.console.print("[dim]Content preview:[/dim]")
+                    for line in preview_lines:
+                        self.console.print(f"[dim]  {line}[/dim]")
+                    self.console.print(f"[dim]  ... ({len(lines) - 5} more lines)[/dim]")
+                else:
+                    self.console.print("[dim]Content:[/dim]")
+                    for line in lines:
+                        self.console.print(f"[dim]  {line}[/dim]")
+                
+                if Confirm.ask("Create this file?", default=True):
+                    try:
+                        # Create parent directories
+                        file_path.parent.mkdir(parents=True, exist_ok=True)
+                        # Write file
+                        with open(file_path, 'w', encoding='utf-8') as f:
+                            f.write(content)
+                        self.console.print(f"[green]✓ Created: {action.content['path']}[/green]")
+                    except Exception as e:
+                        from rich.markup import escape
+                        self.console.print(f"[red]Error creating file: {escape(str(e))}[/red]")
+                else:
+                    self.console.print("[yellow]Skipped[/yellow]")
     
     def _handle_search(self, query: str):
         """Handle web search command."""
