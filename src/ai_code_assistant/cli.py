@@ -8,7 +8,14 @@ import warnings
 warnings.filterwarnings("ignore", message=".*tkinter.*")
 warnings.filterwarnings("ignore", message=".*MouseInfo.*")
 warnings.filterwarnings("ignore", category=UserWarning, module="pyautogui")
+warnings.filterwarnings("ignore", message=".*You must install tkinter.*")
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'  # Also hide pygame prompt if used
+
+# Redirect stderr temporarily during imports to suppress pyautogui warnings
+import io
+import contextlib
+stderr = sys.stderr
+sys.stderr = io.StringIO()
 
 from pathlib import Path
 from typing import Optional, List
@@ -28,6 +35,8 @@ from .file_context import FileContextManager
 from .config import ConfigManager
 from .update_checker import UpdateChecker, get_update_message
 
+# Restore stderr after imports
+sys.stderr = stderr
 
 # Load environment variables
 load_dotenv()
@@ -162,7 +171,13 @@ def main(
         if checker.auto_update():
             return
         else:
-            console.print("[yellow]No updates available[/yellow]")
+            # auto_update returns False if user declined or if no updates
+            # Check if there actually was an update available
+            update_info = checker.check_for_update(force=True)
+            if update_info:
+                console.print("[yellow]Update cancelled[/yellow]")
+            else:
+                console.print("[yellow]No updates available[/yellow]")
             return
     
     if verbose:
@@ -234,18 +249,23 @@ def main(
                 # Try to continue anyway since interactive is the default
             
             try:
-                console.print("[dim]Starting interactive mode...[/dim]")  # Debug message
+                console.print("[dim]Starting interactive mode...[/dim]")
                 interactive_mode = InteractiveMode(
                     bedrock_client=bedrock_client,
                     compact_mode=compact_mode
                 )
                 interactive_mode.run()
+            except KeyboardInterrupt:
+                console.print("\n[yellow]Exiting...[/yellow]")
+                sys.exit(0)
+            except EOFError:
+                console.print("\n[yellow]Exiting...[/yellow]")
+                sys.exit(0)
             except Exception as e:
                 from rich.markup import escape
-                console.print(f"[red]Error starting interactive mode: {escape(str(e))}[/red]")
-                if verbose:
-                    import traceback
-                    traceback.print_exc()
+                console.print(f"[red]Error in interactive mode: {escape(str(e))}[/red]")
+                import traceback
+                traceback.print_exc()
                 sys.exit(1)
             return
         

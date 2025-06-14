@@ -162,7 +162,11 @@ class InteractiveMode:
         
         # Initialize image handling
         self.image_handler = ImageHandler()
-        self.screenshot_capture = ScreenshotCapture()
+        try:
+            self.screenshot_capture = ScreenshotCapture()
+        except Exception as e:
+            logger.warning(f"Screenshot capture unavailable: {e}")
+            self.screenshot_capture = None
         self.context_images: List[Path] = []  # Images to include in context
         
         # Initialize auto-detection
@@ -314,6 +318,13 @@ class InteractiveMode:
         except Exception as e:
             logger.debug(f"Initial update check failed: {e}")
         
+        # Check if we can actually run in interactive mode
+        if not sys.stdin.isatty():
+            self.console.print("[red]Error: Interactive mode requires a terminal (TTY)[/red]")
+            self.console.print("[yellow]Try running with a direct prompt instead:[/yellow]")
+            self.console.print("  sc \"Your question here\"")
+            return
+            
         while True:
             try:
                 # Get context info for prompt
@@ -1614,6 +1625,11 @@ Provide ONLY the commit message, no explanation."""
     
     def _handle_screenshot(self):
         """Handle screenshot capture."""
+        if not self.screenshot_capture:
+            self.console.print("[red]Screenshot capture is not available[/red]")
+            self.console.print("[yellow]Install with: pip install pyautogui[/yellow]")
+            return
+            
         try:
             self.console.print("[dim]Capturing screenshot...[/dim]")
             
