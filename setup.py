@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="steve-code",
-    version="0.2.3",
+    version="0.2.4",
     author="Steve Code Contributors",
     description="A self-contained AI code assistant CLI tool using AWS Bedrock",
     long_description=long_description,

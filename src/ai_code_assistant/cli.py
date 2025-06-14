@@ -38,6 +38,8 @@ from .update_checker import UpdateChecker, get_update_message
 # Restore stderr after imports
 sys.stderr = stderr
 
+print("DEBUG: CLI module loaded")  # Debug
+
 # Load environment variables
 load_dotenv()
 
@@ -148,6 +150,8 @@ def main(
         # Save code blocks
         steve-code --save-code ./output "Write a fibonacci function"
     """
+    print("DEBUG: main() function called")  # Debug
+    
     if version:
         console.print(f"Steve Code v{__version__}")
         return
@@ -183,6 +187,8 @@ def main(
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     
+    print("DEBUG: Checking AWS credentials")  # Debug
+    
     # Check AWS credentials
     if not (os.environ.get('AWS_ACCESS_KEY_ID') or os.environ.get('AWS_PROFILE')):
         console.print(
@@ -193,6 +199,8 @@ def main(
             "  • Or use IAM roles if running on EC2"
         )
         sys.exit(1)
+    
+    print("DEBUG: AWS credentials found")  # Debug
     
     # Load configuration
     config_manager = ConfigManager()
@@ -231,7 +239,9 @@ def main(
         )
         
         # Interactive mode (default when no prompt provided)
+        print(f"DEBUG: interactive={interactive}, prompt={prompt}")  # Debug
         if interactive or not prompt:
+            print("DEBUG: Entering interactive mode block")  # Debug
             
             # Check for updates in background (non-blocking)
             try:
