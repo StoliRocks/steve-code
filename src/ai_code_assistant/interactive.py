@@ -113,6 +113,9 @@ class InteractiveMode:
         # File context
         self.context_files: List[Path] = []
         
+        # Working directory
+        self.root_path = Path.cwd()
+        
         # Prompt session with history and completion
         history_file = Path.home() / ".steve_code" / "prompt_history"
         history_file.parent.mkdir(parents=True, exist_ok=True)
@@ -1678,8 +1681,9 @@ Provide ONLY the commit message, no explanation."""
         try:
             from .project_analyzer import ProjectAnalyzer
             
-            # Create a dedicated analyzer
-            self.project_analyzer = ProjectAnalyzer(self.root_path)
+            # Create a dedicated analyzer  
+            analyzer = ProjectAnalyzer(self.root_path)
+            self.project_analyzer = analyzer
             self.project_info = self.project_analyzer.analyze_project()
             
             # Get project summary
@@ -1713,7 +1717,8 @@ Provide ONLY the commit message, no explanation."""
             self._update_system_prompt_with_project()
             
         except Exception as e:
-            logger.debug(f"Project analysis failed: {e}")
+            logger.warning(f"Project analysis failed: {e}")
+            self.console.print(f"[yellow]Project analysis failed: {e}[/yellow]")
             self.project_summary = None
             self.project_analyzer = None
     
