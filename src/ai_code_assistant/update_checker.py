@@ -79,6 +79,8 @@ class UpdateChecker:
             current = version.parse(__version__)
             latest = version.parse(latest_version)
             
+            logger.debug(f"Version check: current={current}, latest={latest}")
+            
             if latest > current:
                 download_url = release_data.get("html_url", "")
                 self._write_cache({
