@@ -201,7 +201,8 @@ class InteractiveMode:
         try:
             self._show_welcome()
         except Exception as e:
-            self.console.print(f"[red]Error showing welcome: {e}[/red]")
+            from rich.markup import escape
+            self.console.print(f"[red]Error showing welcome: {escape(str(e))}[/red]")
             logger.error(f"Welcome screen error: {e}", exc_info=True)
         
         while True:
@@ -247,7 +248,8 @@ class InteractiveMode:
             except EOFError:
                 break
             except Exception as e:
-                self.console.print(f"[red]Error: {e}[/red]")
+                from rich.markup import escape
+                self.console.print(f"[red]Error: {escape(str(e))}[/red]")
     
     def _show_welcome(self):
         """Show welcome message."""
@@ -528,7 +530,8 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
                 self.console.print("[yellow]Available keys: temperature, max_tokens, region, auto_detect, auto_compact, auto_discover[/yellow]")
         
         except ValueError as e:
-            self.console.print(f"[red]Invalid value: {e}[/red]")
+            from rich.markup import escape
+            self.console.print(f"[red]Invalid value: {escape(str(e))}[/red]")
     
     def _save_config(self):
         """Save current settings to configuration file."""
@@ -632,7 +635,8 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
             tree = self.file_manager.get_directory_tree(root)
             self.console.print(Panel(tree, title=f"Directory Tree: {root}", border_style="blue"))
         except Exception as e:
-            self.console.print(f"[red]Error showing tree: {e}[/red]")
+            from rich.markup import escape
+            self.console.print(f"[red]Error showing tree: {escape(str(e))}[/red]")
     
     def _save_conversation(self, filename: str):
         """Save current conversation."""
@@ -645,7 +649,8 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
             
             self.console.print(f"[green]Conversation saved to: {path}[/green]")
         except Exception as e:
-            self.console.print(f"[red]Error saving conversation: {e}[/red]")
+            from rich.markup import escape
+            self.console.print(f"[red]Error saving conversation: {escape(str(e))}[/red]")
     
     def _load_conversation(self, filename: str):
         """Load a previous conversation."""
@@ -672,7 +677,8 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
             else:
                 self.console.print(f"[red]Failed to load conversation[/red]")
         except Exception as e:
-            self.console.print(f"[red]Error loading conversation: {e}[/red]")
+            from rich.markup import escape
+            self.console.print(f"[red]Error loading conversation: {escape(str(e))}[/red]")
     
     def _export_conversation(self, args: str):
         """Export conversation."""
@@ -694,7 +700,8 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
             self.conversation.export_session(path, format=format_type)
             self.console.print(f"[green]Exported to: {path}[/green]")
         except Exception as e:
-            self.console.print(f"[red]Error exporting: {e}[/red]")
+            from rich.markup import escape
+            self.console.print(f"[red]Error exporting: {escape(str(e))}[/red]")
     
     def _extract_code(self, output_dir: str):
         """Extract code blocks from the last assistant message."""
@@ -1123,7 +1130,8 @@ Example response:
             self.conversation.add_message("assistant", response_text)
             
         except Exception as e:
-            self.console.print(f"\n[red]Error: {e}[/red]")
+            from rich.markup import escape
+            self.console.print(f"\n[red]Error: {escape(str(e))}[/red]")
     
     def _handle_git_command(self, command: str):
         """Handle git commands."""
@@ -1172,7 +1180,8 @@ Example response:
                 self.console.print("[yellow]Available: /git, /git diff, /git diff --staged, /git log, /git commit[/yellow]")
         
         except Exception as e:
-            self.console.print(f"[red]Git error: {e}[/red]")
+            from rich.markup import escape
+            self.console.print(f"[red]Git error: {escape(str(e))}[/red]")
     
     def _create_git_commit(self):
         """Create a git commit with AI-generated message."""
@@ -1249,7 +1258,8 @@ Provide ONLY the commit message, no explanation."""
             self.console.print(f"[dim]Message: {commit_message}[/dim]")
             
         except Exception as e:
-            self.console.print(f"[red]Error creating commit: {e}[/red]")
+            from rich.markup import escape
+            self.console.print(f"[red]Error creating commit: {escape(str(e))}[/red]")
     
     def _display_response(self, response: str):
         """Display response with proper formatting."""
@@ -1760,7 +1770,9 @@ Provide ONLY the commit message, no explanation."""
             
         except Exception as e:
             logger.warning(f"Project analysis failed: {e}")
-            self.console.print(f"[yellow]Project analysis failed: {e}[/yellow]")
+            # Escape the error message to prevent markup issues
+            from rich.markup import escape
+            self.console.print(f"[yellow]Project analysis failed: {escape(str(e))}[/yellow]")
             self.project_summary = None
             self.project_analyzer = None
     

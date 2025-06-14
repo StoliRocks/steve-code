@@ -253,7 +253,8 @@ def main(
                 )
                 interactive_mode.run()
             except Exception as e:
-                console.print(f"[red]Error starting interactive mode: {e}[/red]")
+                from rich.markup import escape
+                console.print(f"[red]Error starting interactive mode: {escape(str(e))}[/red]")
                 if verbose:
                     import traceback
                     traceback.print_exc()
@@ -325,7 +326,8 @@ def main(
         console.print("\n[yellow]Interrupted[/yellow]")
         sys.exit(0)
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
+        from rich.markup import escape
+        console.print(f"[red]Error: {escape(str(e))}[/red]")
         if verbose:
             import traceback
             traceback.print_exc()
