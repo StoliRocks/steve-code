@@ -46,8 +46,11 @@ class TodoItem:
     """Represents a todo/task item."""
     id: str
     content: str
-    status: str = "pending"  # pending, in_progress, completed
+    status: str = "pending"  # pending, in_progress, completed, failed
     priority: str = "medium"  # low, medium, high
+    metadata: Optional[Dict[str, Any]] = None  # Store action details
+    result: Optional[str] = None  # Store execution result
+    error: Optional[str] = None  # Store error if failed
     
     def format(self) -> str:
         """Format the todo item."""
@@ -317,3 +320,84 @@ class StructuredOutput:
                     branch.add(f"📄 {item}")
             else:
                 parent.add(f"📄 {key}: {value}")
+    
+    def display_action_todos(self, todos: List[TodoItem], show_preview: bool = True):
+        """Display action todos with rich formatting and progress tracking.
+        
+        Args:
+            todos: List of todo items with action metadata
+            show_preview: Whether to show action preview for pending items
+        """
+        if not todos:
+            return
+            
+        self.console.print("\n[bold blue]📋 Action Queue[/bold blue]")
+        
+        # Group by status
+        pending = [t for t in todos if t.status == "pending"]
+        in_progress = [t for t in todos if t.status == "in_progress"]
+        completed = [t for t in todos if t.status == "completed"]
+        failed = [t for t in todos if t.status == "failed"]
+        
+        # Progress bar
+        total = len(todos)
+        done = len(completed)
+        progress = int((done / total) * 20) if total > 0 else 0
+        bar = "█" * progress + "░" * (20 - progress)
+        
+        self.console.print(f"\nProgress: [{bar}] {done}/{total} completed")
+        
+        # Status summary
+        if in_progress:
+            self.console.print(f"[yellow]⚡ {len(in_progress)} in progress[/yellow]")
+        if failed:
+            self.console.print(f"[red]⚠ {len(failed)} failed[/red]")
+        
+        # List todos with numbers
+        for i, todo in enumerate(todos, 1):
+            status_icon = {
+                "pending": "⏳",
+                "in_progress": "🔄",
+                "completed": "✅",
+                "failed": "❌"
+            }[todo.status]
+            
+            # Color based on status
+            color = {
+                "pending": "white",
+                "in_progress": "yellow",
+                "completed": "green",
+                "failed": "red"
+            }[todo.status]
+            
+            # Strike through completed items
+            if todo.status == "completed":
+                self.console.print(f"\n[{color}]{i}. {status_icon} [strike]{todo.content}[/strike][/{color}]")
+            else:
+                self.console.print(f"\n[{color}]{i}. {status_icon} {todo.content}[/{color}]")
+            
+            # Show preview for pending items
+            if show_preview and todo.status == "pending" and todo.metadata:
+                if todo.metadata['type'] == 'command':
+                    cmd = todo.metadata['action'].command
+                    self.console.print(f"   [dim]└─ $ {cmd}[/dim]")
+                elif todo.metadata['type'] == 'file':
+                    action = todo.metadata['action']
+                    # Show file path and first line of content
+                    if hasattr(action, 'content') and action.content:
+                        lines = action.content.strip().split('\n')
+                        preview = lines[0][:60] + "..." if len(lines[0]) > 60 else lines[0]
+                        if len(lines) > 1:
+                            preview += f" (+{len(lines)-1} lines)"
+                        self.console.print(f"   [dim]└─ {preview}[/dim]")
+            
+            # Show error for failed items
+            if todo.status == "failed" and todo.error:
+                self.console.print(f"   [red]└─ Error: {todo.error}[/red]")
+        
+        # Show next action hint
+        if pending:
+            next_idx = next((i for i, t in enumerate(todos, 1) if t.status == "pending"), None)
+            if next_idx:
+                self.console.print(f"\n[bold cyan]Next: {todos[next_idx-1].content}[/bold cyan]")
+                self.console.print("[dim]Press Enter to execute, or type a command[/dim]")

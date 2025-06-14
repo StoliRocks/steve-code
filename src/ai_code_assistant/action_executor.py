@@ -12,6 +12,7 @@ from rich.syntax import Syntax
 from rich.prompt import Confirm
 
 from .code_extractor import CodeBlock, CodeExtractor
+from .structured_output import TodoItem
 
 
 @dataclass
@@ -337,3 +338,55 @@ class ActionExecutor:
         # Then create/modify files
         for action in file_actions:
             self.execute_file_action(action)
+    
+    def actions_to_todos(self, file_actions: List[FileAction], 
+                         command_actions: List[CommandAction]) -> List[TodoItem]:
+        """Convert file and command actions to todo items.
+        
+        Args:
+            file_actions: List of file actions
+            command_actions: List of command actions
+            
+        Returns:
+            List of TodoItem objects
+        """
+        todos = []
+        todo_id = 1
+        
+        # Add command actions first (often create directories)
+        for cmd in command_actions:
+            # Determine priority based on command type
+            priority = "high" if any(x in cmd.command for x in ['mkdir', 'npm init', 'cdk init']) else "medium"
+            
+            todos.append(TodoItem(
+                id=f"action_{todo_id}",
+                content=f"Execute: {cmd.description or cmd.command}",
+                status="pending",
+                priority=priority,
+                metadata={'type': 'command', 'action': cmd}
+            ))
+            todo_id += 1
+        
+        # Add file actions
+        for action in file_actions:
+            try:
+                rel_path = action.file_path.relative_to(self.root_path)
+            except ValueError:
+                rel_path = action.file_path
+            
+            content_desc = f"Create file: {rel_path}"
+            if action.action_type == 'modify':
+                content_desc = f"Modify file: {rel_path}"
+            elif action.action_type == 'delete':
+                content_desc = f"Delete file: {rel_path}"
+            
+            todos.append(TodoItem(
+                id=f"action_{todo_id}",
+                content=content_desc,
+                status="pending",
+                priority="medium",
+                metadata={'type': 'file', 'action': action}
+            ))
+            todo_id += 1
+        
+        return todos

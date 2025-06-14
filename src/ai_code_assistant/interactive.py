@@ -79,6 +79,10 @@ class InteractiveMode:
         '/tree': 'Show directory tree',
         '/todo': 'Show task list extracted from conversation',
         '/todo done <number>': 'Mark a todo as completed',
+        '/todo run <number>': 'Execute a specific action',
+        '/todo all': 'Execute all pending actions',
+        '/todo skip': 'Skip the next pending action',
+        '/todo actions': 'Show current action queue',
         '/stream': 'Toggle response streaming (default: off, shows full response at once)',
         '/expand': 'Show last response with all sections expanded',
         '/settings': 'Show or modify settings (use /settings <key> <value>)',
@@ -205,6 +209,9 @@ class InteractiveMode:
         # Track current todos
         self.current_todos: List[TodoItem] = []
         
+        # Track action todos separately
+        self.action_todos: List[TodoItem] = []
+        
         # Store last response for /expand command
         self.last_response = ""
         self.last_response_sections = []
@@ -250,6 +257,11 @@ class InteractiveMode:
                 )
                 
                 if not user_input.strip():
+                    # If we have pending action todos, execute the next one
+                    if self.action_todos:
+                        next_todo = next((t for t in self.action_todos if t.status == "pending"), None)
+                        if next_todo:
+                            self._execute_action_todo(next_todo)
                     continue
                 
                 # Handle commands
@@ -391,6 +403,14 @@ class InteractiveMode:
         elif cmd == '/todo':
             if args.startswith('done '):
                 self._mark_todo_done(args[5:])
+            elif args == 'all':
+                self._execute_all_action_todos()
+            elif args.startswith('run '):
+                self._execute_action_todo_by_number(args[4:])
+            elif args.startswith('skip'):
+                self._skip_next_action_todo()
+            elif args == 'actions':
+                self._show_action_todos()
             else:
                 self._show_todos()
         
@@ -1326,39 +1346,55 @@ Provide ONLY the commit message, no explanation."""
         structured_actions, clean_response = self.action_parser.extract_actions(response)
         
         if structured_actions:
-            # We have structured actions - execute them step by step
-            self.console.print("\n[bold blue]Structured Actions Detected:[/bold blue]")
-            for i, action in enumerate(structured_actions, 1):
-                self.console.print(f"{i}. {action.description}")
+            # Convert structured actions to todos
+            file_actions = []
+            command_actions = []
             
-            if self._confirm_action("\nExecute these actions step by step?"):
-                self._execute_structured_actions(structured_actions)
-            else:
-                self.console.print("[yellow]Actions not executed[/yellow]")
+            for action in structured_actions:
+                if action.action_type == 'file':
+                    from .action_executor import FileAction
+                    file_actions.append(FileAction(
+                        action_type='create',
+                        file_path=Path(action.content['path']),
+                        content=action.content['content'],
+                        language=None
+                    ))
+                elif action.action_type == 'command':
+                    from .action_executor import CommandAction
+                    command_actions.append(CommandAction(
+                        command=action.content['command'],
+                        description=action.description
+                    ))
+            
+            # Convert to todos
+            self.action_todos = self.action_executor.actions_to_todos(file_actions, command_actions)
+            
+            # Display as todo list
+            self.structured_output.display_action_todos(self.action_todos)
+            
+            # Show quick execute option
+            if self.action_todos:
+                self.console.print("\n[cyan]Quick actions:[/cyan]")
+                self.console.print("  • Press [bold]Enter[/bold] to execute next action")
+                self.console.print("  • Type [bold]/todo all[/bold] to execute all at once")
+                self.console.print("  • Type [bold]/todo skip[/bold] to skip current action")
+                
         else:
             # Check if response looks like it has unstructured actions
             if self.action_parser.detect_unstructured_actions(response):
-                self.console.print("\n[yellow]Detected file/command instructions in response[/yellow]")
+                # Try regex-based extraction
+                file_actions, command_actions = self.action_executor.extract_actions_from_response(response)
                 
-                if self._confirm_action("Would you like me to extract and execute these actions?"):
-                    # Reprocess the response to get structured actions
-                    with self.console.status("[dim]Extracting structured actions...[/dim]", spinner="dots"):
-                        structured_actions = self.action_reprocessor.reprocess_for_actions(response)
+                if file_actions or command_actions:
+                    # Convert to todos
+                    self.action_todos = self.action_executor.actions_to_todos(file_actions, command_actions)
                     
-                    if structured_actions:
-                        self.console.print(f"\n[green]Extracted {len(structured_actions)} actions[/green]")
-                        self._execute_structured_actions(structured_actions)
-                    else:
-                        # Fall back to old regex-based approach
-                        self.console.print("[yellow]Could not extract structured actions, trying pattern matching...[/yellow]")
-                        file_actions, command_actions = self.action_executor.extract_actions_from_response(response)
-                        
-                        if file_actions or command_actions:
-                            if self.action_executor.display_actions_summary(file_actions, command_actions):
-                                self.action_executor.execute_all_actions(file_actions, command_actions)
-                        else:
-                            self.console.print("[red]No actions could be extracted[/red]")
-                            self.console.print("[dim]Tip: You can use /code to manually extract code blocks[/dim]")
+                    # Display as todo list
+                    self.structured_output.display_action_todos(self.action_todos)
+                    
+                    # Show hint
+                    self.console.print("\n[yellow]💡 Tip: Actions detected from response[/yellow]")
+                    self.console.print("[cyan]Press Enter to start executing, or type a command[/cyan]")
     
     def _confirm_action(self, prompt: str) -> bool:
         """Ask for confirmation with a yes/no prompt."""
@@ -1790,6 +1826,114 @@ Provide ONLY the commit message, no explanation."""
                         self.console.print("[red]Invalid selection[/red]")
             except (ValueError, KeyboardInterrupt):
                 self.console.print("[yellow]Cancelled[/yellow]")
+    
+    def _execute_action_todo(self, todo: TodoItem):
+        """Execute a single action todo."""
+        if todo.status != "pending":
+            self.console.print(f"[yellow]Action already {todo.status}[/yellow]")
+            return
+        
+        # Update status to in_progress
+        todo.status = "in_progress"
+        self.structured_output.display_action_todos(self.action_todos)
+        
+        # Execute based on type
+        success = False
+        try:
+            if todo.metadata and todo.metadata['type'] == 'command':
+                success = self.action_executor.execute_command(todo.metadata['action'])
+            elif todo.metadata and todo.metadata['type'] == 'file':
+                # Show confirmation for file creation
+                action = todo.metadata['action']
+                try:
+                    rel_path = action.file_path.relative_to(self.root_path)
+                except ValueError:
+                    rel_path = action.file_path
+                
+                self.console.print(f"\n[cyan]Creating file: {rel_path}[/cyan]")
+                
+                # Show content preview
+                if hasattr(action, 'content') and action.content:
+                    lines = action.content.strip().split('\n')
+                    if len(lines) <= 10:
+                        self.console.print("[dim]Content:[/dim]")
+                        for line in lines:
+                            self.console.print(f"  [dim]{line}[/dim]")
+                    else:
+                        self.console.print("[dim]Content preview:[/dim]")
+                        for line in lines[:5]:
+                            self.console.print(f"  [dim]{line}[/dim]")
+                        self.console.print(f"  [dim]... ({len(lines) - 5} more lines)[/dim]")
+                
+                if self._confirm_action("Create this file?"):
+                    success = self.action_executor.execute_file_action(action)
+                else:
+                    self.console.print("[yellow]Skipped[/yellow]")
+                    todo.status = "pending"
+                    return
+                    
+            # Update status
+            todo.status = "completed" if success else "failed"
+            if not success and not todo.error:
+                todo.error = "Execution failed"
+                
+        except Exception as e:
+            from rich.markup import escape
+            todo.status = "failed"
+            todo.error = str(e)
+            self.console.print(f"[red]Error: {escape(str(e))}[/red]")
+        
+        # Refresh display
+        self.structured_output.display_action_todos(self.action_todos)
+        
+        # If there are more todos, show hint
+        remaining = [t for t in self.action_todos if t.status == "pending"]
+        if remaining:
+            self.console.print(f"\n[dim]{len(remaining)} actions remaining. Press Enter to continue.[/dim]")
+    
+    def _execute_action_todo_by_number(self, number: str):
+        """Execute a specific action todo by number."""
+        try:
+            idx = int(number) - 1
+            if 0 <= idx < len(self.action_todos):
+                self._execute_action_todo(self.action_todos[idx])
+            else:
+                self.console.print("[red]Invalid action number[/red]")
+        except ValueError:
+            self.console.print("[red]Please provide a valid number[/red]")
+    
+    def _execute_all_action_todos(self):
+        """Execute all pending action todos."""
+        pending = [t for t in self.action_todos if t.status == "pending"]
+        if not pending:
+            self.console.print("[yellow]No pending actions to execute[/yellow]")
+            return
+        
+        self.console.print(f"\n[cyan]Executing {len(pending)} actions...[/cyan]")
+        
+        for todo in pending:
+            self._execute_action_todo(todo)
+            # Small pause between actions
+            if todo.status == "completed":
+                time.sleep(0.1)
+    
+    def _skip_next_action_todo(self):
+        """Skip the next pending action todo."""
+        next_todo = next((t for t in self.action_todos if t.status == "pending"), None)
+        if next_todo:
+            next_todo.status = "completed"
+            next_todo.result = "Skipped by user"
+            self.console.print(f"[yellow]Skipped: {next_todo.content}[/yellow]")
+            self.structured_output.display_action_todos(self.action_todos)
+        else:
+            self.console.print("[yellow]No pending actions to skip[/yellow]")
+    
+    def _show_action_todos(self):
+        """Show current action todos."""
+        if self.action_todos:
+            self.structured_output.display_action_todos(self.action_todos)
+        else:
+            self.console.print("[yellow]No actions in queue[/yellow]")
     
     def _show_todos(self):
         """Extract and show tasks/todos from conversation."""
