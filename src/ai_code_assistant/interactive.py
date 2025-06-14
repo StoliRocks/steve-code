@@ -1096,6 +1096,7 @@ Example response:
                 
                 # Display full response
                 self._display_response(response_text)
+                # Note: _display_response already calls _process_actions
             else:
                 # Detect query intent for fun verb
                 query_context = self.analyze_query(user_input) if self.smart_context else None
@@ -1150,6 +1151,9 @@ Example response:
             
             # Add to conversation history
             self.conversation.add_message("assistant", response_text)
+            
+            # Process actions after streaming
+            self._process_actions(response_text)
             
         except Exception as e:
             from rich.markup import escape
@@ -1311,6 +1315,11 @@ Provide ONLY the commit message, no explanation."""
                 # Fallback to plain text
                 self.console.print(response)
         
+        # Process actions
+        self._process_actions(response)
+    
+    def _process_actions(self, response: str):
+        """Extract and process actions from the response."""
         # First try to extract structured actions
         structured_actions, clean_response = self.action_parser.extract_actions(response)
         
