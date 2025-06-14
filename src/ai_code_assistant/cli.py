@@ -3,8 +3,11 @@
 print("DEBUG: Top of cli.py")  # Very first thing
 
 import os
+print("DEBUG: Imported os")
 import sys
+print("DEBUG: Imported sys")
 import warnings
+print("DEBUG: Imported warnings")
 
 # Suppress tkinter warnings from pyautogui before any imports
 warnings.filterwarnings("ignore", message=".*tkinter.*")
@@ -12,12 +15,17 @@ warnings.filterwarnings("ignore", message=".*MouseInfo.*")
 warnings.filterwarnings("ignore", category=UserWarning, module="pyautogui")
 warnings.filterwarnings("ignore", message=".*You must install tkinter.*")
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'  # Also hide pygame prompt if used
+print("DEBUG: Set up warning filters")
 
 # Redirect stderr temporarily during imports to suppress pyautogui warnings
 import io
+print("DEBUG: Imported io")
 import contextlib
-stderr = sys.stderr
-sys.stderr = io.StringIO()
+print("DEBUG: Imported contextlib")
+
+# TEMPORARILY DISABLE STDERR REDIRECT TO SEE IF THIS IS THE ISSUE
+# stderr = sys.stderr
+# sys.stderr = io.StringIO()
 
 print("DEBUG: Starting imports...")
 
@@ -55,7 +63,7 @@ from .update_checker import UpdateChecker, get_update_message
 print("DEBUG: Imported UpdateChecker")
 
 # Restore stderr after imports
-sys.stderr = stderr
+# sys.stderr = stderr  # TEMPORARILY DISABLED
 
 print("DEBUG: CLI module loaded")  # Debug
 
