@@ -1,32 +1,9 @@
 #!/usr/bin/env python3
 """Command-line interface for AI Code Assistant."""
 
-# Write debug to file since stdout might be redirected
 import os
-debug_file = os.path.expanduser("~/steve-code-debug.log")
-with open(debug_file, "a") as f:
-    f.write("DEBUG: Top of cli.py\n")
-
-print("DEBUG: Top of cli.py")  # Also print
-
-try:
-    import os
-    with open(debug_file, "a") as f:
-        f.write("DEBUG: Imported os\n")
-    print("DEBUG: Imported os")
-except Exception as e:
-    with open(debug_file, "a") as f:
-        f.write(f"DEBUG: Failed to import os: {e}\n")
-    print(f"DEBUG: Failed to import os: {e}")
-    raise
 import sys
-with open(debug_file, "a") as f:
-    f.write("DEBUG: Imported sys\n")
-print("DEBUG: Imported sys")
 import warnings
-with open(debug_file, "a") as f:
-    f.write("DEBUG: Imported warnings\n")
-print("DEBUG: Imported warnings")
 
 # Suppress tkinter warnings from pyautogui before any imports
 warnings.filterwarnings("ignore", message=".*tkinter.*")
@@ -34,88 +11,28 @@ warnings.filterwarnings("ignore", message=".*MouseInfo.*")
 warnings.filterwarnings("ignore", category=UserWarning, module="pyautogui")
 warnings.filterwarnings("ignore", message=".*You must install tkinter.*")
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'  # Also hide pygame prompt if used
-with open(debug_file, "a") as f:
-    f.write("DEBUG: Set up warning filters\n")
-print("DEBUG: Set up warning filters")
 
 # Redirect stderr temporarily during imports to suppress pyautogui warnings
 import io
-with open(debug_file, "a") as f:
-    f.write("DEBUG: Imported io\n")
-print("DEBUG: Imported io")
 import contextlib
-with open(debug_file, "a") as f:
-    f.write("DEBUG: Imported contextlib\n")
-print("DEBUG: Imported contextlib")
-
-# TEMPORARILY DISABLE STDERR REDIRECT TO SEE IF THIS IS THE ISSUE
-# stderr = sys.stderr
-# sys.stderr = io.StringIO()
-
-with open(debug_file, "a") as f:
-    f.write("DEBUG: Starting imports...\n")
-print("DEBUG: Starting imports...")
 
 from pathlib import Path
-print("DEBUG: Imported Path")
 from typing import Optional, List
-print("DEBUG: Imported typing")
 import logging
-print("DEBUG: Imported logging")
 
 import click
-print("DEBUG: Imported click")
 from dotenv import load_dotenv
-print("DEBUG: Imported dotenv")
 from rich.console import Console
-print("DEBUG: Imported Console")
 from rich.logging import RichHandler
-print("DEBUG: Imported RichHandler")
 
-try:
-    from . import __version__
-    with open(debug_file, "a") as f:
-        f.write("DEBUG: Imported __version__\n")
-    print("DEBUG: Imported __version__")
-except Exception as e:
-    with open(debug_file, "a") as f:
-        f.write(f"DEBUG: Failed to import __version__: {e}\n")
-    raise
-
-try:
-    from .bedrock_client import BedrockClient, ModelType, Message
-    with open(debug_file, "a") as f:
-        f.write("DEBUG: Imported bedrock_client\n")
-    print("DEBUG: Imported bedrock_client")
-except Exception as e:
-    with open(debug_file, "a") as f:
-        f.write(f"DEBUG: Failed to import bedrock_client: {e}\n")
-    raise
-
-try:
-    from .interactive import InteractiveMode
-    with open(debug_file, "a") as f:
-        f.write("DEBUG: Imported InteractiveMode\n")
-    print("DEBUG: Imported InteractiveMode")
-except Exception as e:
-    with open(debug_file, "a") as f:
-        f.write(f"DEBUG: Failed to import InteractiveMode: {e}\n")
-    raise
+from . import __version__
+from .bedrock_client import BedrockClient, ModelType, Message
+from .interactive import InteractiveMode
 from .conversation import ConversationHistory
-print("DEBUG: Imported ConversationHistory")
 from .code_extractor import CodeExtractor
-print("DEBUG: Imported CodeExtractor")
 from .file_context import FileContextManager
-print("DEBUG: Imported FileContextManager")
 from .config import ConfigManager
-print("DEBUG: Imported ConfigManager")
 from .update_checker import UpdateChecker, get_update_message
-print("DEBUG: Imported UpdateChecker")
-
-# Restore stderr after imports
-# sys.stderr = stderr  # TEMPORARILY DISABLED
-
-print("DEBUG: CLI module loaded")  # Debug
 
 # Load environment variables
 load_dotenv()
@@ -227,7 +144,6 @@ def main(
         # Save code blocks
         steve-code --save-code ./output "Write a fibonacci function"
     """
-    print("DEBUG: main() function called")  # Debug
     
     if version:
         console.print(f"Steve Code v{__version__}")
@@ -264,7 +180,6 @@ def main(
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     
-    print("DEBUG: Checking AWS credentials")  # Debug
     
     # Check AWS credentials
     if not (os.environ.get('AWS_ACCESS_KEY_ID') or os.environ.get('AWS_PROFILE')):
@@ -277,7 +192,6 @@ def main(
         )
         sys.exit(1)
     
-    print("DEBUG: AWS credentials found")  # Debug
     
     # Load configuration
     config_manager = ConfigManager()
@@ -316,9 +230,7 @@ def main(
         )
         
         # Interactive mode (default when no prompt provided)
-        print(f"DEBUG: interactive={interactive}, prompt={prompt}")  # Debug
         if interactive or not prompt:
-            print("DEBUG: Entering interactive mode block")  # Debug
             
             # Check for updates in background (non-blocking)
             try:
@@ -418,16 +330,5 @@ def main(
         sys.exit(1)
 
 
-print("DEBUG: main function defined")
-
-# Ensure Click can find and call main
-try:
-    # Force Click to process the command
-    if hasattr(main, '__call__'):
-        print("DEBUG: main is callable")
-except Exception as e:
-    print(f"DEBUG: Error checking main: {e}")
-
 if __name__ == '__main__':
-    print("DEBUG: Running as __main__")
     main()

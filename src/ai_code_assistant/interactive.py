@@ -1,12 +1,7 @@
 """Interactive mode for the AI Code Assistant."""
 
-# Write debug to file since stdout might be redirected
-import os
-debug_file = os.path.expanduser("~/steve-code-debug.log")
-with open(debug_file, "a") as f:
-    f.write("DEBUG: Top of interactive.py\n")
-
 import sys
+import os
 import subprocess
 import logging
 import time
@@ -15,9 +10,6 @@ import threading
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime
-
-with open(debug_file, "a") as f:
-    f.write("DEBUG: Basic imports completed in interactive.py\n")
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
@@ -345,47 +337,47 @@ class InteractiveMode:
                     # Get context info for prompt
                     messages = self._prepare_api_messages()
                     stats = self.context_manager.get_context_stats(messages)
-                
-                # Build context status line
-                context_percent = 100 - stats.usage_percentage
-                context_color = "green" if context_percent > 30 else "yellow" if context_percent > 20 else "red"
-                context_status = f"[{context_color}]Context: {context_percent}% available[/{context_color}]"
-                
-                # Show context status if getting full
-                if stats.usage_percentage >= 50:
-                    self.console.print(f"\n{context_status} (auto-compact at 20%)")
-                
-                # Build prompt
-                prompt_text = "\n>>> "
-                
-                # Debug: About to show prompt
-                logger.debug("About to show prompt...")
-                
-                # Get user input
-                user_input = self.session.prompt(
-                    prompt_text,
-                    multiline=False,
-                    style=self._create_prompt_style()
-                )
-                
-                if not user_input.strip():
-                    # If we have pending action todos, execute the next one
-                    if self.action_todos:
-                        next_todo = next((t for t in self.action_todos if t.status == "pending"), None)
-                        if next_todo:
-                            self._execute_action_todo(next_todo)
-                    continue
-                
-                # Handle commands
-                if user_input.startswith('/'):
-                    if not self._handle_command(user_input):
-                        break
-                    continue
-                
-                # Process regular message
-                self._process_message(user_input)
-                
-            except KeyboardInterrupt:
+                    
+                    # Build context status line
+                    context_percent = 100 - stats.usage_percentage
+                    context_color = "green" if context_percent > 30 else "yellow" if context_percent > 20 else "red"
+                    context_status = f"[{context_color}]Context: {context_percent}% available[/{context_color}]"
+                    
+                    # Show context status if getting full
+                    if stats.usage_percentage >= 50:
+                        self.console.print(f"\n{context_status} (auto-compact at 20%)")
+                    
+                    # Build prompt
+                    prompt_text = "\n>>> "
+                    
+                    # Debug: About to show prompt
+                    logger.debug("About to show prompt...")
+                    
+                    # Get user input
+                    user_input = self.session.prompt(
+                        prompt_text,
+                        multiline=False,
+                        style=self._create_prompt_style()
+                    )
+                    
+                    if not user_input.strip():
+                        # If we have pending action todos, execute the next one
+                        if self.action_todos:
+                            next_todo = next((t for t in self.action_todos if t.status == "pending"), None)
+                            if next_todo:
+                                self._execute_action_todo(next_todo)
+                        continue
+                    
+                    # Handle commands
+                    if user_input.startswith('/'):
+                        if not self._handle_command(user_input):
+                            break
+                        continue
+                    
+                    # Process regular message
+                    self._process_message(user_input)
+                    
+                except KeyboardInterrupt:
                 self.console.print("\n[yellow]Use /exit to quit[/yellow]")
                 continue
             except EOFError:
