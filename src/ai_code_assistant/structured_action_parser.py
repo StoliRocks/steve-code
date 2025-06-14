@@ -51,27 +51,30 @@ class StructuredActionParser:
                 
                 for action_elem in root.findall('action'):
                     action_type = action_elem.get('type')
-                    description = action_elem.find('description').text
+                    description_elem = action_elem.find('description')
+                    description = description_elem.text if description_elem is not None else ""
                     
                     if action_type == 'command':
-                        command = action_elem.find('command').text
-                        actions.append(StructuredAction(
-                            action_type='command',
-                            description=description,
-                            content={'command': command}
-                        ))
+                        command_elem = action_elem.find('command')
+                        if command_elem is not None:
+                            actions.append(StructuredAction(
+                                action_type='command',
+                                description=description,
+                                content={'command': command_elem.text}
+                            ))
                     
                     elif action_type == 'file':
-                        path = action_elem.find('path').text
-                        content = action_elem.find('content').text
-                        actions.append(StructuredAction(
-                            action_type='file',
-                            description=description,
-                            content={'path': path, 'content': content.strip()}
-                        ))
+                        path_elem = action_elem.find('path')
+                        content_elem = action_elem.find('content')
+                        if path_elem is not None and content_elem is not None:
+                            actions.append(StructuredAction(
+                                action_type='file',
+                                description=description,
+                                content={'path': path_elem.text, 'content': content_elem.text.strip()}
+                            ))
                 
                 # Remove this action block from the response
-                remaining_response = remaining_response.replace(match.group(0), '')
+                remaining_response = remaining_response.replace(match.group(0), '[Actions hidden - see action queue below]')
                 
             except ET.ParseError as e:
                 logger.warning(f"Failed to parse action XML: {e}")

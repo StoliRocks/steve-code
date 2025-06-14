@@ -40,6 +40,7 @@ from .action_executor import ActionExecutor
 from .collapsible_output import CollapsibleOutput
 from .structured_action_parser import StructuredActionParser
 from .action_reprocessor import ActionReprocessor
+from .response_filter import ResponseFilter
 
 logger = logging.getLogger(__name__)
 
@@ -1162,20 +1163,38 @@ Example response:
                     # Clear the status and show assistant label
                     live.stop()
                 
-                # Now stream the response normally
+                # Now stream the response with filtering
                 self.console.print("\n[dim]Assistant:[/dim]")
+                
+                # Create response filter
+                filter = ResponseFilter()
+                has_actions = False
                 
                 for chunk in stream:
                     response_text += chunk
-                    self.console.print(chunk, end="")
+                    # Filter the chunk to hide action blocks
+                    filtered_chunk, found_actions = filter.filter_chunk(chunk)
+                    if found_actions:
+                        has_actions = True
+                    if filtered_chunk:
+                        self.console.print(filtered_chunk, end="")
+                
+                # Output any remaining content
+                remaining = filter.get_remaining()
+                if remaining:
+                    self.console.print(remaining, end="")
                 
                 self.console.print()  # New line after streaming
+                
+                # If we detected actions, show a note
+                if has_actions:
+                    self.console.print("\n[dim]📋 Processing file and command actions...[/dim]")
             
-            # Add to conversation history
+            # Process actions and get cleaned response
+            self._process_and_display_actions(response_text)
+            
+            # Add to conversation history (with original response for context)
             self.conversation.add_message("assistant", response_text)
-            
-            # Process actions after streaming
-            self._process_actions(response_text)
             
         except Exception as e:
             from rich.markup import escape
@@ -1311,11 +1330,17 @@ Provide ONLY the commit message, no explanation."""
     
     def _display_response(self, response: str):
         """Display response with proper formatting and action detection."""
-        # Store for /expand command
+        # Store original for /expand command
         self.last_response = response
         
+        # Extract actions and get cleaned response
+        structured_actions, clean_response = self.action_parser.extract_actions(response)
+        
+        # Use cleaned response for display
+        display_response = clean_response if structured_actions else response
+        
         # First, parse the response into collapsible sections
-        sections = self.collapsible_output.parse_response(response)
+        sections = self.collapsible_output.parse_response(display_response)
         self.last_response_sections = sections
         
         if sections and len(sections) > 3:  # Use collapsible for longer responses
@@ -1331,13 +1356,18 @@ Provide ONLY the commit message, no explanation."""
         else:
             # For short responses, just use markdown
             try:
-                md = Markdown(response)
+                md = Markdown(display_response)
                 self.console.print(md)
             except Exception:
                 # Fallback to plain text
-                self.console.print(response)
+                self.console.print(display_response)
         
-        # Process actions
+        # Process actions (pass original response)
+        self._process_actions(response)
+    
+    def _process_and_display_actions(self, response: str):
+        """Process actions and display them as todos."""
+        # Process actions (this will handle both structured and unstructured)
         self._process_actions(response)
     
     def _process_actions(self, response: str):
