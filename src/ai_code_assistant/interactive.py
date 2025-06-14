@@ -166,10 +166,20 @@ class InteractiveMode:
         try:
             self.smart_context = SmartContextV2()
             self.auto_discover_files = True  # Enable by default
+            
+            # Analyze project on startup to understand context
+            self.project_info = None
+            self.project_summary = ""
+            self.project_analyzer = None
+            self._analyze_project_context()
+            
         except Exception as e:
             logger.warning(f"Failed to initialize smart context: {e}")
             self.smart_context = None
             self.auto_discover_files = False
+            self.project_info = None
+            self.project_analyzer = None
+            self.project_summary = ""
         
         # Initialize structured output formatter
         self.structured_output = StructuredOutput(self.console)
@@ -238,14 +248,19 @@ class InteractiveMode:
     
     def _show_welcome(self):
         """Show welcome message."""
+        welcome_text = "[bold blue]Steve Code[/bold blue]\n\n"
+        welcome_text += "Interactive mode with AWS Bedrock\n"
+        welcome_text += f"Model: [green]{self.bedrock_client.model_type.name}[/green]\n"
+        
+        # Add project context if available
+        if self.project_summary:
+            welcome_text += f"\n[cyan]{self.project_summary}[/cyan]\n"
+        
+        welcome_text += "\nType [yellow]/help[/yellow] for available commands\n"
+        welcome_text += "Type [yellow]/exit[/yellow] to quit"
+        
         welcome = Panel(
-            Text.from_markup(
-                "[bold blue]Steve Code[/bold blue]\n\n"
-                "Interactive mode with AWS Bedrock\n"
-                f"Model: [green]{self.bedrock_client.model_type.name}[/green]\n\n"
-                "Type [yellow]/help[/yellow] for available commands\n"
-                "Type [yellow]/exit[/yellow] to quit"
-            ),
+            Text.from_markup(welcome_text),
             title="Welcome",
             border_style="blue"
         )
@@ -725,10 +740,35 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
         
         # Auto-discover relevant files based on query if enabled
         discovered_files = []
-        if self.auto_discover_files and not self.context_files and self.smart_context:
+        if self.auto_discover_files and not self.context_files:
             # Only auto-discover if no files were manually added
-            with self.console.status("[dim]Analyzing query and discovering relevant files...[/dim]", spinner="dots"):
-                discovered_files = self.smart_context.get_relevant_files(user_input, max_files=10)
+            
+            # First, use project analyzer for intelligent suggestions
+            if self.project_analyzer:
+                with self.console.status("[dim]Analyzing query and discovering relevant files...[/dim]", spinner="dots"):
+                    # Try to find files based on the query
+                    suggested_files = self.project_analyzer.suggest_files_for_query(user_input, max_suggestions=10)
+                    
+                    # If general code review query, add main files
+                    review_keywords = ['review', 'improve', 'better', 'analyze', 'optimize', 'refactor', 'code quality']
+                    if any(keyword in user_input.lower() for keyword in review_keywords) and not suggested_files:
+                        # Add main entry points from project
+                        if self.project_info and self.project_info.main_directories:
+                            for main_dir in self.project_info.main_directories[:2]:
+                                patterns = ['main.*', 'app.*', 'index.*', '__main__.*']
+                                for pattern in patterns:
+                                    for file_path in main_dir.glob(pattern):
+                                        if file_path.is_file() and file_path.suffix in ['.py', '.js', '.ts', '.java', '.go']:
+                                            suggested_files.append(file_path)
+                                            if len(suggested_files) >= 5:
+                                                break
+                    
+                    discovered_files = suggested_files
+            
+            # Fallback to smart context if available
+            elif self.smart_context:
+                with self.console.status("[dim]Analyzing query and discovering relevant files...[/dim]", spinner="dots"):
+                    discovered_files = self.smart_context.get_relevant_files(user_input, max_files=10)
             
             if discovered_files:
                 # Just show a brief summary
@@ -1508,6 +1548,64 @@ Provide ONLY the commit message, no explanation."""
         
         return unique_todos
     
+    def _analyze_project_context(self):
+        """Analyze the current directory as a code project."""
+        try:
+            from .project_analyzer import ProjectAnalyzer
+            
+            # Create a dedicated analyzer
+            self.project_analyzer = ProjectAnalyzer(self.root_path)
+            self.project_info = self.project_analyzer.analyze_project()
+            
+            # Get project summary
+            self.project_summary = self.project_analyzer.get_project_summary()
+            
+            # Pre-load relevant files based on project type
+            if self.project_info.main_directories:
+                # Find main entry points
+                entry_files = []
+                for main_dir in self.project_info.main_directories[:2]:  # Limit to first 2 directories
+                    # Look for common entry points
+                    patterns = ['main.*', 'app.*', 'index.*', '__main__.*']
+                    for pattern in patterns:
+                        for file_path in main_dir.glob(pattern):
+                            if file_path.is_file() and file_path.suffix in ['.py', '.js', '.ts', '.java', '.go']:
+                                entry_files.append(file_path)
+                                if len(entry_files) >= 3:
+                                    break
+                
+                # Pre-load these files silently
+                if entry_files:
+                    for file_path in entry_files[:3]:
+                        try:
+                            content = self.file_manager.read_file(file_path)
+                            if content:
+                                self.context_files[str(file_path)] = content
+                        except Exception:
+                            pass
+            
+            # Update system prompt with project context
+            self._update_system_prompt_with_project()
+            
+        except Exception as e:
+            logger.debug(f"Project analysis failed: {e}")
+            self.project_summary = None
+            self.project_analyzer = None
+    
+    def _update_system_prompt_with_project(self):
+        """Update the system prompt to include project context."""
+        if not self.project_analyzer or not self.project_summary:
+            return
+        
+        # Get base system prompt
+        base_prompt = self.bedrock_client.get_default_system_prompt(interactive=True)
+        
+        # Add project-specific context
+        project_context = f"""\n\nYou are operating in a {self.project_info.project_type} project.\n{self.project_summary}\n\nImportant: When the user asks about code, always assume they are referring to the code in the current directory unless they specify otherwise. \nProactively use the /files command or analyze files in the project directories to provide concrete, specific answers about their code.\nWhen asked to review, improve, or analyze code without specific file paths, automatically discover and analyze relevant files from the project."""
+        
+        # Update system prompt
+        self.system_prompt = base_prompt + project_context
+    
     def _mark_todo_done(self, todo_num: str):
         """Mark a todo as completed."""
         try:
@@ -1523,3 +1621,49 @@ Provide ONLY the commit message, no explanation."""
                 self.console.print(f"[red]Invalid todo number. Use /todo to see the list.[/red]")
         except ValueError:
             self.console.print("[red]Please provide a valid number.[/red]")
+    
+    def _show_project_info(self):
+        """Show project analysis information."""
+        if not self.project_analyzer:
+            self.console.print("[yellow]No project analysis available[/yellow]")
+            self.console.print("[dim]Try restarting to analyze the project[/dim]")
+            return
+        
+        # Get detailed project info
+        info = self.project_analyzer.project_info
+        
+        # Create a nice display
+        self.console.print("\n[bold blue]Project Analysis[/bold blue]")
+        self.console.print(f"[cyan]{self.project_summary}[/cyan]\n")
+        
+        # Show build files
+        if info.build_files:
+            self.console.print("[bold]Build Files:[/bold]")
+            for file in info.build_files[:5]:
+                self.console.print(f"  • {file.relative_to(info.root_path)}")
+        
+        # Show config files
+        if info.config_files:
+            self.console.print("\n[bold]Config Files:[/bold]")
+            for file in info.config_files[:5]:
+                self.console.print(f"  • {file.relative_to(info.root_path)}")
+        
+        # Show test directories
+        if info.test_directories:
+            self.console.print("\n[bold]Test Directories:[/bold]")
+            for dir in info.test_directories:
+                self.console.print(f"  • {dir.relative_to(info.root_path)}")
+        
+        # Suggest actions
+        self.console.print("\n[dim]Tip: I can automatically analyze your code when you ask questions![/dim]")
+    
+    def _toggle_autodiscover(self):
+        """Toggle automatic file discovery."""
+        self.auto_discover_files = not self.auto_discover_files
+        status = "enabled" if self.auto_discover_files else "disabled"
+        self.console.print(f"[green]Automatic file discovery {status}[/green]")
+        
+        if self.auto_discover_files:
+            self.console.print("[dim]I'll automatically find relevant files when you ask about code[/dim]")
+        else:
+            self.console.print("[dim]Use /files to manually add files to context[/dim]")

@@ -216,7 +216,7 @@ class BedrockClient:
         self.model_type = model_type
         self.logger.info(f"Switched to model: {model_type.value}")
     
-    def get_default_system_prompt(self, interactive: bool = False) -> str:
+    def get_default_system_prompt(self, interactive: bool = False, project_context: str = "") -> str:
         """Get the default system prompt for the current model.
         
         Args:
