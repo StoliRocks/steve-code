@@ -36,6 +36,8 @@ from .auto_detection import AutoDetector
 from .context_manager import ContextManager, ContextStats
 from .smart_context_v2 import SmartContextV2
 from .structured_output import StructuredOutput, UpdateItem, TodoItem
+from .action_executor import ActionExecutor
+from .collapsible_output import CollapsibleOutput
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +78,7 @@ class InteractiveMode:
         '/todo': 'Show task list extracted from conversation',
         '/todo done <number>': 'Mark a todo as completed',
         '/compact': 'Toggle compact mode',
+        '/expand': 'Show last response with all sections expanded',
         '/settings': 'Show or modify settings (use /settings <key> <value>)',
         '/set': 'Set a configuration value (temperature, max_tokens, region, auto_detect)',
         '/config': 'Save current settings to config file',
@@ -187,8 +190,18 @@ class InteractiveMode:
         # Initialize structured output formatter
         self.structured_output = StructuredOutput(self.console)
         
+        # Initialize action executor
+        self.action_executor = ActionExecutor(self.console, self.root_path)
+        
+        # Initialize collapsible output
+        self.collapsible_output = CollapsibleOutput(self.console)
+        
         # Track current todos
         self.current_todos: List[TodoItem] = []
+        
+        # Store last response for /expand command
+        self.last_response = ""
+        self.last_response_sections = []
     
     def _create_prompt_style(self) -> Style:
         """Create prompt style."""
@@ -315,6 +328,9 @@ class InteractiveMode:
             self.compact_mode = not self.compact_mode
             mode = "enabled" if self.compact_mode else "disabled"
             self.console.print(f"[green]Compact mode {mode}[/green]")
+        
+        elif cmd == '/expand':
+            self._show_expanded_response()
         
         elif cmd == '/model':
             self._switch_model(args)
@@ -1262,14 +1278,43 @@ Provide ONLY the commit message, no explanation."""
             self.console.print(f"[red]Error creating commit: {escape(str(e))}[/red]")
     
     def _display_response(self, response: str):
-        """Display response with proper formatting."""
-        # Try to render as markdown
-        try:
-            md = Markdown(response)
-            self.console.print(md)
-        except Exception:
-            # Fallback to plain text
-            self.console.print(response)
+        """Display response with proper formatting and action detection."""
+        # Store for /expand command
+        self.last_response = response
+        
+        # First, parse the response into collapsible sections
+        sections = self.collapsible_output.parse_response(response)
+        self.last_response_sections = sections
+        
+        if sections and len(sections) > 3:  # Use collapsible for longer responses
+            # Display summary first
+            self.collapsible_output.display_summary(sections)
+            
+            # Then display sections (collapsed by default)
+            self.console.print("\n[bold]Response:[/bold]")
+            self.collapsible_output.display_sections(sections, expand_all=False)
+            
+            # Hint about expanding
+            self.console.print("\n[dim]Tip: Use /expand to show all sections expanded[/dim]")
+        else:
+            # For short responses, just use markdown
+            try:
+                md = Markdown(response)
+                self.console.print(md)
+            except Exception:
+                # Fallback to plain text
+                self.console.print(response)
+        
+        # Extract and offer to execute actions
+        file_actions, command_actions = self.action_executor.extract_actions_from_response(response)
+        
+        if file_actions or command_actions:
+            # Show what actions were detected
+            if self.action_executor.display_actions_summary(file_actions, command_actions):
+                # User confirmed - execute actions
+                self.action_executor.execute_all_actions(file_actions, command_actions)
+            else:
+                self.console.print("[yellow]Actions not executed[/yellow]")
     
     def _handle_search(self, query: str):
         """Handle web search command."""
@@ -1872,3 +1917,20 @@ The files in the context ARE the user's application - analyze them immediately."
             self.console.print("[dim]I'll automatically find relevant files when you ask about code[/dim]")
         else:
             self.console.print("[dim]Use /files to manually add files to context[/dim]")
+    
+    def _show_expanded_response(self):
+        """Show the last response with all sections expanded."""
+        if not self.last_response:
+            self.console.print("[yellow]No previous response to expand[/yellow]")
+            return
+            
+        if self.last_response_sections:
+            self.console.print("\n[bold]Expanded Response:[/bold]")
+            self.collapsible_output.display_sections(self.last_response_sections, expand_all=True)
+        else:
+            # Just show the full response
+            try:
+                md = Markdown(self.last_response)
+                self.console.print(md)
+            except Exception:
+                self.console.print(self.last_response)
