@@ -166,10 +166,23 @@ class ScreenshotCapture:
         try:
             # Suppress the tkinter warning on import
             import warnings
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", message=".*tkinter.*")
-                import pyautogui
-            self.has_pyautogui = True
+            import sys
+            import io
+            
+            # Capture stderr to suppress pyautogui's print statements
+            old_stderr = sys.stderr
+            sys.stderr = io.StringIO()
+            
+            try:
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", message=".*tkinter.*")
+                    warnings.filterwarnings("ignore", message=".*MouseInfo.*")
+                    import pyautogui
+                self.has_pyautogui = True
+            finally:
+                # Restore stderr
+                sys.stderr = old_stderr
+                
         except ImportError:
             self.logger.debug("pyautogui not installed - screenshot capture unavailable")
         except Exception as e:

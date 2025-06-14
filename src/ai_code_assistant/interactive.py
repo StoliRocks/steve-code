@@ -318,6 +318,9 @@ class InteractiveMode:
         except Exception as e:
             logger.debug(f"Initial update check failed: {e}")
         
+        # Debug: Confirm we got this far
+        self.console.print("[dim]Ready for input...[/dim]")
+        
         # Check if we can actually run in interactive mode
         if not sys.stdin.isatty():
             self.console.print("[red]Error: Interactive mode requires a terminal (TTY)[/red]")
@@ -325,11 +328,15 @@ class InteractiveMode:
             self.console.print("  sc \"Your question here\"")
             return
             
-        while True:
-            try:
-                # Get context info for prompt
-                messages = self._prepare_api_messages()
-                stats = self.context_manager.get_context_stats(messages)
+        # Debug: Print that we're entering the main loop
+        logger.debug("Entering interactive main loop...")
+        
+        try:
+            while True:
+                try:
+                    # Get context info for prompt
+                    messages = self._prepare_api_messages()
+                    stats = self.context_manager.get_context_stats(messages)
                 
                 # Build context status line
                 context_percent = 100 - stats.usage_percentage
@@ -342,6 +349,9 @@ class InteractiveMode:
                 
                 # Build prompt
                 prompt_text = "\n>>> "
+                
+                # Debug: About to show prompt
+                logger.debug("About to show prompt...")
                 
                 # Get user input
                 user_input = self.session.prompt(
@@ -375,6 +385,12 @@ class InteractiveMode:
             except Exception as e:
                 from rich.markup import escape
                 self.console.print(f"[red]Error: {escape(str(e))}[/red]")
+                logger.exception("Error in main loop")
+        except Exception as e:
+            self.console.print(f"[red]Fatal error in interactive mode: {e}[/red]")
+            logger.exception("Fatal error in interactive mode")
+            import traceback
+            traceback.print_exc()
     
     def _show_welcome(self):
         """Show welcome message."""
