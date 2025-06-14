@@ -1,6 +1,7 @@
 """Interactive mode for the AI Code Assistant."""
 
 import sys
+import logging
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from datetime import datetime
@@ -28,6 +29,8 @@ from .image_handler import ImageHandler, ScreenshotCapture
 from .command_completer import CommandCompleter
 from .auto_detection import AutoDetector
 from .context_manager import ContextManager, ContextStats
+
+logger = logging.getLogger(__name__)
 
 
 class InteractiveMode:
@@ -142,7 +145,11 @@ class InteractiveMode:
     
     def run(self):
         """Run the interactive mode."""
-        self._show_welcome()
+        try:
+            self._show_welcome()
+        except Exception as e:
+            self.console.print(f"[red]Error showing welcome: {e}[/red]")
+            logger.error(f"Welcome screen error: {e}", exc_info=True)
         
         while True:
             try:

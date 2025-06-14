@@ -222,16 +222,35 @@ def main(
         # Interactive mode
         if interactive or not prompt:
             # Check for updates in background (non-blocking)
-            update_msg = get_update_message()
-            if update_msg:
-                console.print(update_msg)
-                console.print()
+            try:
+                update_msg = get_update_message()
+                if update_msg:
+                    console.print(update_msg)
+                    console.print()
+            except Exception as e:
+                logging.debug(f"Update check failed: {e}")
             
-            interactive_mode = InteractiveMode(
-                bedrock_client=bedrock_client,
-                compact_mode=compact
-            )
-            interactive_mode.run()
+            # Check if we're in a terminal that supports interactive mode
+            if not sys.stdin.isatty() and not interactive:
+                console.print("[yellow]No input provided. Use -i for interactive mode or provide a prompt.[/yellow]")
+                console.print("\nExamples:")
+                console.print('  sc -i                    # Start interactive mode')
+                console.print('  sc "How do I sort a list in Python?"  # Single query')
+                console.print('  sc --help                # Show all options')
+                return
+            
+            try:
+                interactive_mode = InteractiveMode(
+                    bedrock_client=bedrock_client,
+                    compact_mode=compact
+                )
+                interactive_mode.run()
+            except Exception as e:
+                console.print(f"[red]Error starting interactive mode: {e}[/red]")
+                if verbose:
+                    import traceback
+                    traceback.print_exc()
+                sys.exit(1)
             return
         
         # Single command mode
