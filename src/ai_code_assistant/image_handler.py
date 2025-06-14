@@ -163,30 +163,44 @@ class ScreenshotCapture:
     def _check_dependencies(self):
         """Check if screenshot dependencies are available."""
         self.has_pyautogui = False
+        
+        # First do a lightweight check for tkinter
+        import subprocess
+        import sys
+        
+        # Check if tkinter is available without importing it
+        result = subprocess.run(
+            [sys.executable, "-c", "import tkinter"],
+            capture_output=True,
+            text=True
+        )
+        
+        if result.returncode != 0:
+            self.logger.debug("tkinter not installed - screenshot capture unavailable")
+            return
+        
         try:
-            # Suppress the tkinter warning on import
+            # Suppress warnings and output during import
             import warnings
-            import sys
             import io
             
-            # Capture stderr to suppress pyautogui's print statements
             old_stderr = sys.stderr
+            old_stdout = sys.stdout
             sys.stderr = io.StringIO()
+            sys.stdout = io.StringIO()
             
             try:
                 with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", message=".*tkinter.*")
-                    warnings.filterwarnings("ignore", message=".*MouseInfo.*")
+                    warnings.filterwarnings("ignore")
                     import pyautogui
                 self.has_pyautogui = True
             finally:
-                # Restore stderr
                 sys.stderr = old_stderr
+                sys.stdout = old_stdout
                 
-        except ImportError:
-            self.logger.debug("pyautogui not installed - screenshot capture unavailable")
+        except (ImportError, SystemExit) as e:
+            self.logger.debug(f"pyautogui unavailable: {type(e).__name__}")
         except Exception as e:
-            # Handle case where pyautogui is installed but tkinter is not
             self.logger.debug(f"Screenshot capture unavailable: {e}")
     
     def capture_screenshot(self, output_path: Optional[Path] = None) -> Optional[Path]:

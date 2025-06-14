@@ -31,7 +31,7 @@ from .file_context import FileContextManager
 from .config import ConfigManager
 from .git_integration import GitIntegration, GitStatus
 from .web_search import WebSearcher, SmartWebSearch
-from .image_handler import ImageHandler, ScreenshotCapture
+from .image_handler import ImageHandler
 from .command_completer import CommandCompleter
 from .auto_detection import AutoDetector
 from .context_manager import ContextManager, ContextStats
@@ -162,11 +162,7 @@ class InteractiveMode:
         
         # Initialize image handling
         self.image_handler = ImageHandler()
-        try:
-            self.screenshot_capture = ScreenshotCapture()
-        except Exception as e:
-            logger.warning(f"Screenshot capture unavailable: {e}")
-            self.screenshot_capture = None
+        self.screenshot_capture = None  # Will be initialized on first use
         self.context_images: List[Path] = []  # Images to include in context
         
         # Initialize auto-detection
@@ -292,6 +288,22 @@ class InteractiveMode:
                     self.console.print(self.last_update_message)
             except Exception as e:
                 logger.debug(f"Background update check failed: {e}")
+    
+    def _get_screenshot_capture(self):
+        """Get or initialize screenshot capture lazily."""
+        if self.screenshot_capture is None:
+            try:
+                from .image_handler import ScreenshotCapture
+                self.screenshot_capture = ScreenshotCapture()
+            except Exception as e:
+                logger.warning(f"Screenshot capture unavailable: {e}")
+                # Return a dummy object that always fails
+                class DummyScreenshot:
+                    def capture_screenshot(self, *args, **kwargs):
+                        logger.error("Screenshot capture not available - install pyautogui")
+                        return None
+                self.screenshot_capture = DummyScreenshot()
+        return self.screenshot_capture
     
     def run(self):
         """Run the interactive mode."""
@@ -1641,7 +1653,8 @@ Provide ONLY the commit message, no explanation."""
     
     def _handle_screenshot(self):
         """Handle screenshot capture."""
-        if not self.screenshot_capture:
+        screenshot_capture = self._get_screenshot_capture()
+        if not screenshot_capture:
             self.console.print("[red]Screenshot capture is not available[/red]")
             self.console.print("[yellow]Install with: pip install pyautogui[/yellow]")
             return
@@ -1650,7 +1663,7 @@ Provide ONLY the commit message, no explanation."""
             self.console.print("[dim]Capturing screenshot...[/dim]")
             
             # Capture screenshot
-            screenshot_path = self.screenshot_capture.capture_screenshot()
+            screenshot_path = screenshot_capture.capture_screenshot()
             
             if screenshot_path:
                 # Add to context images
