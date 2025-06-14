@@ -8,7 +8,7 @@ import time
 import random
 import threading
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime
 
 from prompt_toolkit import PromptSession
