@@ -29,6 +29,7 @@ from .image_handler import ImageHandler, ScreenshotCapture
 from .command_completer import CommandCompleter
 from .auto_detection import AutoDetector
 from .context_manager import ContextManager, ContextStats
+from .smart_context_v2 import SmartContextV2
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,8 @@ class InteractiveMode:
         '/status': 'Show current status',
         '/model': 'Switch model (sonnet-4, sonnet-3.7, opus-4)',
         '/export': 'Export conversation (json/markdown)',
+        '/project': 'Show project analysis',
+        '/autodiscover': 'Toggle automatic file discovery',
         '/code': 'Extract and save code blocks',
         '/tree': 'Show directory tree',
         '/compact': 'Toggle compact mode',
@@ -136,6 +139,10 @@ class InteractiveMode:
             warning_threshold=0.7   # Warn at 70%
         )
         self.auto_compact_enabled = True
+        
+        # Initialize smart context v2 for automatic file discovery
+        self.smart_context = SmartContextV2()
+        self.auto_discover_files = True  # Enable by default
     
     def _create_prompt_style(self) -> Style:
         """Create prompt style."""
@@ -287,6 +294,12 @@ class InteractiveMode:
         elif cmd == '/image':
             self._add_images(args)
         
+        elif cmd == '/project':
+            self._show_project_info()
+        
+        elif cmd == '/autodiscover':
+            self._toggle_autodiscover()
+        
         else:
             self.console.print(f"[red]Unknown command: {cmd}[/red]")
             self.console.print("Type /help for available commands")
@@ -353,6 +366,7 @@ Compact Mode: [yellow]{'Enabled' if self.compact_mode else 'Disabled'}[/yellow]
 Auto-detect URLs: [yellow]{'Enabled' if self.auto_detector.auto_fetch_urls else 'Disabled'}[/yellow]
 Auto-detect Images: [yellow]{'Enabled' if self.auto_detector.auto_detect_images else 'Disabled'}[/yellow]
 Auto-detect Files: [yellow]{'Enabled' if self.auto_detector.auto_detect_files else 'Disabled'}[/yellow]
+Auto-discover Files: [yellow]{'Enabled' if self.auto_discover_files else 'Disabled'}[/yellow]
 Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/yellow]
 
 [dim]History: {self.conversation.history_dir}[/dim]
@@ -432,9 +446,18 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
                 self.auto_compact_enabled = not self.auto_compact_enabled
                 self.console.print(f"[green]Auto-compact {'enabled' if self.auto_compact_enabled else 'disabled'}[/green]")
             
+            elif key == "auto_discover":
+                # Toggle auto-discover
+                self.auto_discover_files = not self.auto_discover_files
+                self.console.print(f"[green]Auto-discover files {'enabled' if self.auto_discover_files else 'disabled'}[/green]")
+                if self.auto_discover_files:
+                    self.console.print("[dim]I will automatically find relevant files based on your queries[/dim]")
+                else:
+                    self.console.print("[dim]Use /files to manually add files to context[/dim]")
+            
             else:
                 self.console.print(f"[red]Unknown setting: {key}[/red]")
-                self.console.print("[yellow]Available keys: temperature, max_tokens, region, auto_detect, auto_compact[/yellow]")
+                self.console.print("[yellow]Available keys: temperature, max_tokens, region, auto_detect, auto_compact, auto_discover[/yellow]")
         
         except ValueError as e:
             self.console.print(f"[red]Invalid value: {e}[/red]")
@@ -499,14 +522,36 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
         paths = file_paths.split()
         added = []
         
-        for path_str in paths:
-            path = Path(path_str).resolve()
-            if path.exists() and path.is_file():
-                if path not in self.context_files:
-                    self.context_files.append(path)
-                    added.append(path)
-            else:
-                self.console.print(f"[red]File not found: {path_str}[/red]")
+        # Use progress for multiple files
+        if len(paths) > 1:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=self.console,
+                transient=True,
+            ) as progress:
+                task = progress.add_task(f"Adding {len(paths)} files...", total=len(paths))
+                
+                for i, path_str in enumerate(paths):
+                    path = Path(path_str).resolve()
+                    progress.update(task, advance=1, description=f"Reading {path.name}...")
+                    
+                    if path.exists() and path.is_file():
+                        if path not in self.context_files:
+                            self.context_files.append(path)
+                            added.append(path)
+                    else:
+                        self.console.print(f"[red]File not found: {path_str}[/red]")
+        else:
+            # Single file, no progress needed
+            for path_str in paths:
+                path = Path(path_str).resolve()
+                if path.exists() and path.is_file():
+                    if path not in self.context_files:
+                        self.context_files.append(path)
+                        added.append(path)
+                else:
+                    self.console.print(f"[red]File not found: {path_str}[/red]")
         
         if added:
             self.console.print(f"[green]Added {len(added)} file(s) to context[/green]")
@@ -628,24 +673,63 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
         # Prepare content parts
         content_parts = []
         
-        # Add file context if any
-        if self.context_files:
-            context = self.file_manager.create_context_from_files(self.context_files)
+        # Auto-discover relevant files based on query if enabled
+        discovered_files = []
+        if self.auto_discover_files and not self.context_files:
+            # Only auto-discover if no files were manually added
+            with self.console.status("[dim]Analyzing query and discovering relevant files...[/dim]", spinner="dots"):
+                discovered_files = self.smart_context.get_relevant_files(user_input, max_files=10)
+            
+            if discovered_files:
+                self.console.print(f"[dim]Auto-discovered {len(discovered_files)} relevant files[/dim]")
+                # Show first few files
+                for f in discovered_files[:3]:
+                    rel_path = f.relative_to(self.smart_context.project_analyzer.root_path)
+                    self.console.print(f"[dim]  • {rel_path}[/dim]")
+                if len(discovered_files) > 3:
+                    self.console.print(f"[dim]  ... and {len(discovered_files) - 3} more[/dim]")
+        
+        # Add file context (manual files take precedence over discovered)
+        files_to_include = self.context_files if self.context_files else discovered_files
+        if files_to_include:
+            context = self.file_manager.create_context_from_files(files_to_include)
             content_parts.append(context)
         
         # Auto-fetch URLs if detected
         if detections['urls']:
             url_contents = []
-            for url in detections['urls']:
-                self.console.print(f"[dim]Fetching {url}...[/dim]")
-                content = self.web_searcher.fetch_page_content(url)
-                if content:
-                    # Limit content size
-                    if len(content) > 5000:
-                        content = content[:5000] + "..."
-                    url_contents.append(f"=== Content from {url} ===\n{content}\n=== End of {url} ===")
-                else:
-                    self.console.print(f"[yellow]Failed to fetch {url}[/yellow]")
+            # Use progress spinner for multiple URLs
+            if len(detections['urls']) > 1:
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    console=self.console,
+                    transient=True,
+                ) as progress:
+                    task = progress.add_task(f"Fetching {len(detections['urls'])} URLs...", total=len(detections['urls']))
+                    
+                    for url in detections['urls']:
+                        progress.update(task, advance=1, description=f"Fetching {url}...")
+                        content = self.web_searcher.fetch_page_content(url)
+                        if content:
+                            # Limit content size
+                            if len(content) > 5000:
+                                content = content[:5000] + "..."
+                            url_contents.append(f"=== Content from {url} ===\n{content}\n=== End of {url} ===")
+                        else:
+                            self.console.print(f"[yellow]Failed to fetch {url}[/yellow]")
+            else:
+                # Single URL
+                for url in detections['urls']:
+                    with self.console.status(f"[dim]Fetching {url}...[/dim]", spinner="dots"):
+                        content = self.web_searcher.fetch_page_content(url)
+                    if content:
+                        # Limit content size
+                        if len(content) > 5000:
+                            content = content[:5000] + "..."
+                        url_contents.append(f"=== Content from {url} ===\n{content}\n=== End of {url} ===")
+                    else:
+                        self.console.print(f"[yellow]Failed to fetch {url}[/yellow]")
             
             if url_contents:
                 content_parts.append("\n\n".join(url_contents))
@@ -730,8 +814,26 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
                 self._display_response(response_text)
             else:
                 # Stream directly to console in normal mode
-                self.console.print("[dim]Assistant:[/dim]")
-                for chunk in self.bedrock_client.send_message(messages, self.system_prompt):
+                # Show thinking indicator briefly
+                with self.console.status("[dim]Thinking...[/dim]", spinner="dots"):
+                    # Start the stream (this will get the first chunk)
+                    stream = self.bedrock_client.send_message(messages, self.system_prompt)
+                    first_chunk = None
+                    try:
+                        first_chunk = next(stream)
+                    except StopIteration:
+                        pass
+                
+                # Now show the assistant label and start streaming
+                self.console.print("\n[dim]Assistant:[/dim]")
+                
+                # Print first chunk if we got one
+                if first_chunk:
+                    response_text += first_chunk
+                    self.console.print(first_chunk, end="")
+                
+                # Continue with rest of stream
+                for chunk in stream:
                     response_text += chunk
                     self.console.print(chunk, end="")
                 self.console.print()  # New line after streaming
@@ -997,3 +1099,58 @@ Provide ONLY the commit message, no explanation."""
                 )
         
         return messages
+    
+    def _show_project_info(self):
+        """Show project analysis information."""
+        try:
+            with self.console.status("[dim]Analyzing project structure...[/dim]", spinner="dots"):
+                project_info = self.smart_context.project_analyzer.analyze_project()
+            
+            # Format project information
+            info_text = f"[bold]Project Analysis[/bold]\n\n"
+            info_text += f"Type: [green]{project_info.project_type}[/green]\n"
+            info_text += f"Root: {project_info.root_path}\n"
+            
+            if project_info.framework:
+                info_text += f"Framework: [cyan]{project_info.framework}[/cyan]\n"
+            
+            if project_info.main_directories:
+                info_text += f"\nMain Directories:\n"
+                for d in project_info.main_directories[:5]:
+                    rel_path = d.relative_to(project_info.root_path)
+                    info_text += f"  • {rel_path}\n"
+            
+            if project_info.test_directories:
+                info_text += f"\nTest Directories:\n"
+                for d in project_info.test_directories[:3]:
+                    rel_path = d.relative_to(project_info.root_path)
+                    info_text += f"  • {rel_path}\n"
+            
+            if project_info.config_files:
+                info_text += f"\nConfiguration Files:\n"
+                for f in project_info.config_files[:5]:
+                    rel_path = f.relative_to(project_info.root_path)
+                    info_text += f"  • {rel_path}\n"
+            
+            # Add file count
+            total_files = sum(1 for _ in project_info.root_path.rglob('*') 
+                            if _.is_file() and not self.smart_context.project_analyzer._should_ignore(_))
+            info_text += f"\nTotal Files: {total_files:,}\n"
+            
+            info_text += f"\n[dim]Auto-discovery: {'[green]enabled[/green]' if self.auto_discover_files else '[red]disabled[/red]'}[/dim]"
+            
+            self.console.print(Panel(info_text, title="Project Information", border_style="blue"))
+            
+        except Exception as e:
+            self.console.print(f"[red]Error analyzing project: {e}[/red]")
+    
+    def _toggle_autodiscover(self):
+        """Toggle automatic file discovery."""
+        self.auto_discover_files = not self.auto_discover_files
+        status = "[green]enabled[/green]" if self.auto_discover_files else "[red]disabled[/red]"
+        self.console.print(f"Automatic file discovery {status}")
+        
+        if self.auto_discover_files:
+            self.console.print("[dim]I will automatically find relevant files based on your queries[/dim]")
+        else:
+            self.console.print("[dim]Use /files to manually add files to context[/dim]")

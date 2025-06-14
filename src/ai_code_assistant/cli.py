@@ -197,7 +197,7 @@ def main(
     
     # Use command-line args or fall back to config
     if model is None:
-        model = config_manager.get('model', 'sonnet-4')
+        model = config_manager.get('model', 'sonnet-3.7')
     if region is None:
         region = config_manager.get('region', 'us-east-1')
     if temperature is None:

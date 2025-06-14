@@ -10,7 +10,7 @@ from dataclasses import dataclass, asdict
 @dataclass
 class Config:
     """Configuration settings for the AI Code Assistant."""
-    model: str = "sonnet-4"
+    model: str = "sonnet-3.7"
     region: str = "us-east-1"
     temperature: float = 0.7
     max_tokens: int = 128000
