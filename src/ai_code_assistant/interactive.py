@@ -27,6 +27,7 @@ from .web_search import WebSearcher, SmartWebSearch
 from .image_handler import ImageHandler, ScreenshotCapture
 from .command_completer import CommandCompleter
 from .auto_detection import AutoDetector
+from .context_manager import ContextManager, ContextStats
 
 
 class InteractiveMode:
@@ -124,6 +125,14 @@ class InteractiveMode:
             auto_detect_images=True,
             auto_detect_files=False  # Can be enabled via settings
         )
+        
+        # Initialize context manager
+        self.context_manager = ContextManager(
+            max_tokens=self.bedrock_client.max_tokens,
+            compact_threshold=0.8,  # Auto-compact at 80%
+            warning_threshold=0.7   # Warn at 70%
+        )
+        self.auto_compact_enabled = True
     
     def _create_prompt_style(self) -> Style:
         """Create prompt style."""
@@ -137,9 +146,20 @@ class InteractiveMode:
         
         while True:
             try:
+                # Get context info for prompt
+                messages = self._prepare_api_messages()
+                stats = self.context_manager.get_context_stats(messages)
+                
+                # Build prompt with context info
+                if stats.usage_percentage >= 70:
+                    color = "red" if stats.usage_percentage >= 80 else "yellow"
+                    prompt_text = f"\n[{color}]({stats.remaining_tokens:,} tokens left)[/{color}] >>> "
+                else:
+                    prompt_text = "\n>>> "
+                
                 # Get user input
                 user_input = self.session.prompt(
-                    "\n>>> ",
+                    prompt_text,
                     multiline=False,
                     style=self._create_prompt_style()
                 )
@@ -276,6 +296,18 @@ class InteractiveMode:
     
     def _show_status(self):
         """Show current status."""
+        # Get context statistics
+        messages = self._prepare_api_messages()
+        stats = self.context_manager.get_context_stats(messages)
+        
+        # Determine context color based on usage
+        if stats.usage_percentage >= 80:
+            context_color = "red"
+        elif stats.usage_percentage >= 70:
+            context_color = "yellow"
+        else:
+            context_color = "green"
+        
         status = f"""[bold]Current Status:[/bold]
 
 Model: [green]{self.bedrock_client.model_type.name}[/green]
@@ -283,6 +315,11 @@ Messages: [yellow]{len(self.conversation.messages)}[/yellow]
 Context Files: [yellow]{len(self.context_files)}[/yellow]
 Context Images: [yellow]{len(self.context_images)}[/yellow]
 Compact Mode: [yellow]{'On' if self.compact_mode else 'Off'}[/yellow]
+
+[bold]Context Usage:[/bold]
+Tokens: [{context_color}]{stats.formatted_status}[/{context_color}]
+{self.context_manager.get_auto_compact_status(self.auto_compact_enabled, stats)}
+
 Session ID: [dim]{self.conversation.session_id}[/dim]"""
         
         if self.context_files:
@@ -309,6 +346,7 @@ Compact Mode: [yellow]{'Enabled' if self.compact_mode else 'Disabled'}[/yellow]
 Auto-detect URLs: [yellow]{'Enabled' if self.auto_detector.auto_fetch_urls else 'Disabled'}[/yellow]
 Auto-detect Images: [yellow]{'Enabled' if self.auto_detector.auto_detect_images else 'Disabled'}[/yellow]
 Auto-detect Files: [yellow]{'Enabled' if self.auto_detector.auto_detect_files else 'Disabled'}[/yellow]
+Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/yellow]
 
 [dim]History: {self.conversation.history_dir}[/dim]
 
@@ -382,9 +420,14 @@ Auto-detect Files: [yellow]{'Enabled' if self.auto_detector.auto_detect_files el
                 else:
                     self.console.print("[yellow]Usage: /set auto_detect [urls|images|files|all|none][/yellow]")
             
+            elif key == "auto_compact":
+                # Toggle auto-compact
+                self.auto_compact_enabled = not self.auto_compact_enabled
+                self.console.print(f"[green]Auto-compact {'enabled' if self.auto_compact_enabled else 'disabled'}[/green]")
+            
             else:
                 self.console.print(f"[red]Unknown setting: {key}[/red]")
-                self.console.print("[yellow]Available keys: temperature, max_tokens, region, auto_detect[/yellow]")
+                self.console.print("[yellow]Available keys: temperature, max_tokens, region, auto_detect, auto_compact[/yellow]")
         
         except ValueError as e:
             self.console.print(f"[red]Invalid value: {e}[/red]")
@@ -650,6 +693,15 @@ Auto-detect Files: [yellow]{'Enabled' if self.auto_detector.auto_detect_files el
                 messages.append(Message(role=msg.role, content=msg.content))
         
         try:
+            # Check context before sending
+            current_messages = self._prepare_api_messages()
+            stats = self.context_manager.get_context_stats(current_messages)
+            
+            if self.context_manager.should_warn(stats):
+                self.console.print(
+                    f"[yellow]⚠ Context usage: {stats.formatted_status}[/yellow]"
+                )
+            
             # Show thinking indicator with progress
             response_text = ""
             
@@ -904,3 +956,37 @@ Provide ONLY the commit message, no explanation."""
         
         if added_count > 0:
             self.console.print(f"[dim]Total images in context: {len(self.context_images)}[/dim]")
+    
+    def _prepare_api_messages(self) -> List[dict]:
+        """Prepare messages for API calls with potential compaction.
+        
+        Returns:
+            List of message dictionaries
+        """
+        messages = []
+        
+        for msg in self.conversation.get_messages():
+            # Convert to dict format
+            if hasattr(msg, 'to_dict'):
+                messages.append(msg.to_dict())
+            else:
+                messages.append({
+                    'role': msg.role,
+                    'content': msg.content
+                })
+        
+        # Check if we need to compact
+        if self.auto_compact_enabled:
+            stats = self.context_manager.get_context_stats(messages)
+            if stats.should_compact:
+                self.console.print("[yellow]Auto-compacting conversation history...[/yellow]")
+                messages = self.context_manager.compact_messages(messages)
+                
+                # Show new stats
+                new_stats = self.context_manager.get_context_stats(messages)
+                self.console.print(
+                    f"[green]Compacted: {stats.total_tokens:,} → {new_stats.total_tokens:,} tokens "
+                    f"({new_stats.remaining_tokens:,} available)[/green]"
+                )
+        
+        return messages

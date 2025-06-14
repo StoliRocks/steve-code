@@ -19,6 +19,8 @@ A self-contained AI code assistant CLI tool that mimics Claude Code's functional
 - **Image/Screenshot Support**: Analyze images, screenshots, and visual content
 - **Path Autocomplete**: Tab completion for file paths and commands
 - **Auto-Detection**: Automatically fetches URLs and detects images in your prompts
+- **Context Management**: Track token usage and auto-compact when nearing limits
+- **Smart Prompts**: Shows remaining tokens when context usage is high
 
 ## Installation
 
@@ -291,6 +293,22 @@ Control auto-detection with:
 >>> /set auto_detect none    # Disable all auto-detection
 ```
 
+### Context Management
+
+Steve Code automatically tracks your conversation context and helps manage token limits:
+
+```bash
+sc -i
+>>> /status  # View current token usage
+# Shows: Tokens: 15,234/128,000 (11.9% used, 112,766 remaining)
+
+# When context usage is high, the prompt shows remaining tokens:
+(45,123 tokens left) >>> 
+
+# Auto-compact automatically summarizes old messages when reaching 80% capacity
+>>> /set auto_compact off  # Disable if you prefer manual management
+```
+
 ## Project Structure
 
 ```
@@ -303,8 +321,13 @@ steve-code/
 │       ├── interactive.py       # Interactive mode
 │       ├── conversation.py      # Conversation history management
 │       ├── code_extractor.py    # Code block extraction
-│       └── file_context.py      # File context handling
-├── examples/                    # Example scripts and usage
+│       ├── file_context.py      # File context handling
+│       ├── git_integration.py   # Git operations
+│       ├── web_search.py        # Web search capability
+│       ├── image_handler.py     # Image/screenshot support
+│       ├── smart_context.py     # Smart file analysis
+│       ├── auto_detection.py    # Auto-detect URLs/images
+│       └── context_manager.py   # Token tracking & compaction
 ├── tests/                      # Unit tests
 ├── requirements.txt            # Python dependencies
 ├── setup.py                    # Package setup
