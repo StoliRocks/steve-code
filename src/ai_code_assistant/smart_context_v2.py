@@ -8,7 +8,7 @@ import re
 
 from .project_analyzer import ProjectAnalyzer, ProjectInfo
 from .file_context import FileContextManager
-from .smart_context import SmartFileContext
+from .smart_context import SmartContextManager
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ class SmartContextV2:
         """
         self.project_analyzer = ProjectAnalyzer(project_root)
         self.file_manager = FileContextManager()
-        self.smart_context = SmartFileContext()
+        self.smart_context = SmartContextManager()
         self.project_info: Optional[ProjectInfo] = None
         
     def analyze_query(self, query: str) -> QueryContext:
@@ -270,7 +270,7 @@ class SmartContextV2:
         if final_files and len(final_files) < max_files:
             # Use smart context to find related files for top results
             for main_file in final_files[:3]:
-                related = self.smart_context.analyze_file_dependencies(
+                related = self.smart_context.find_related_files(
                     main_file,
                     max_depth=1
                 )
@@ -310,8 +310,8 @@ class SmartContextV2:
         if not relevant_files:
             return ""
         
-        # Sort files intelligently
-        sorted_files = self.smart_context.sort_files_intelligently(relevant_files)
+        # Sort files intelligently using get_smart_context
+        sorted_files = self.smart_context.get_smart_context(relevant_files)
         
         # Create context using file manager
         context_parts = []
