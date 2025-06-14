@@ -1,9 +1,14 @@
+#!/usr/bin/env python3
 """Command-line interface for AI Code Assistant."""
 
 print("DEBUG: Top of cli.py")  # Very first thing
 
-import os
-print("DEBUG: Imported os")
+try:
+    import os
+    print("DEBUG: Imported os")
+except Exception as e:
+    print(f"DEBUG: Failed to import os: {e}")
+    raise
 import sys
 print("DEBUG: Imported sys")
 import warnings
@@ -368,5 +373,16 @@ def main(
         sys.exit(1)
 
 
+print("DEBUG: main function defined")
+
+# Ensure Click can find and call main
+try:
+    # Force Click to process the command
+    if hasattr(main, '__call__'):
+        print("DEBUG: main is callable")
+except Exception as e:
+    print(f"DEBUG: Error checking main: {e}")
+
 if __name__ == '__main__':
+    print("DEBUG: Running as __main__")
     main()
