@@ -79,7 +79,7 @@ class InteractiveMode:
         '/tree': 'Show directory tree',
         '/todo': 'Show task list extracted from conversation',
         '/todo done <number>': 'Mark a todo as completed',
-        '/compact': 'Toggle compact mode',
+        '/stream': 'Toggle response streaming (default: off, shows full response at once)',
         '/expand': 'Show last response with all sections expanded',
         '/settings': 'Show or modify settings (use /settings <key> <value>)',
         '/set': 'Set a configuration value (temperature, max_tokens, region, auto_detect)',
@@ -98,14 +98,14 @@ class InteractiveMode:
         self,
         bedrock_client: BedrockClient,
         history_dir: Optional[Path] = None,
-        compact_mode: bool = False
+        compact_mode: bool = True  # Default to non-streaming mode
     ):
         """Initialize interactive mode.
         
         Args:
             bedrock_client: Bedrock client instance
             history_dir: Directory for conversation history
-            compact_mode: Whether to use compact display mode
+            compact_mode: Whether to show full response at once (True) or stream it (False)
         """
         self.bedrock_client = bedrock_client
         self.conversation = ConversationHistory(history_dir)
@@ -330,10 +330,12 @@ class InteractiveMode:
                 self.console.print("[yellow]Usage: /set <key> <value>[/yellow]")
                 self.console.print("[yellow]Keys: temperature, max_tokens, region[/yellow]")
         
-        elif cmd == '/compact':
-            self.compact_mode = not self.compact_mode
-            mode = "enabled" if self.compact_mode else "disabled"
-            self.console.print(f"[green]Compact mode {mode}[/green]")
+        elif cmd == '/stream':
+            self.compact_mode = not self.compact_mode  # Toggle streaming
+            if self.compact_mode:
+                self.console.print("[green]Response streaming disabled - will show full response at once[/green]")
+            else:
+                self.console.print("[green]Response streaming enabled - will show response as it's generated[/green]")
         
         elif cmd == '/expand':
             self._show_expanded_response()
@@ -426,7 +428,7 @@ Model: [green]{self.bedrock_client.model_type.name}[/green]
 Messages: [yellow]{len(self.conversation.messages)}[/yellow]
 Context Files: [yellow]{len(self.context_files)}[/yellow]
 Context Images: [yellow]{len(self.context_images)}[/yellow]
-Compact Mode: [yellow]{'On' if self.compact_mode else 'Off'}[/yellow]
+Response Mode: [yellow]{'Full' if self.compact_mode else 'Streaming'}[/yellow]
 
 [bold]Context Usage:[/bold]
 Tokens: [{context_color}]{stats.formatted_status}[/{context_color}]
@@ -454,7 +456,7 @@ Model: [green]{self.bedrock_client.model_type.value}[/green]
 Region: [yellow]{self.bedrock_client.region_name}[/yellow]
 Max Tokens: [yellow]{self.bedrock_client.max_tokens}[/yellow]
 Temperature: [yellow]{self.bedrock_client.temperature}[/yellow]
-Compact Mode: [yellow]{'Enabled' if self.compact_mode else 'Disabled'}[/yellow]
+Response Display: [yellow]{'Show full response at once' if self.compact_mode else 'Stream response'}[/yellow]
 Auto-detect URLs: [yellow]{'Enabled' if self.auto_detector.auto_fetch_urls else 'Disabled'}[/yellow]
 Auto-detect Images: [yellow]{'Enabled' if self.auto_detector.auto_detect_images else 'Disabled'}[/yellow]
 Auto-detect Files: [yellow]{'Enabled' if self.auto_detector.auto_detect_files else 'Disabled'}[/yellow]
@@ -573,7 +575,7 @@ Auto-compact: [yellow]{'Enabled' if self.auto_compact_enabled else 'Disabled'}[/
             region=self.bedrock_client.region_name,
             temperature=self.bedrock_client.temperature,
             max_tokens=self.bedrock_client.max_tokens,
-            compact_mode=self.compact_mode,
+            compact_mode=self.compact_mode,  # Whether to show full response vs streaming
             history_dir=str(self.conversation.history_dir)
         )
         
@@ -1081,7 +1083,7 @@ Example response:
             response_text = ""
             
             if self.compact_mode:
-                # Use progress spinner for compact mode
+                # Show progress spinner while generating full response
                 with Progress(
                     SpinnerColumn(),
                     TextColumn("[progress.description]{task.description}"),

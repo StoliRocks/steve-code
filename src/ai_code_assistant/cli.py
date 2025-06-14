@@ -79,9 +79,9 @@ console = Console()
     help='Include file(s) in context'
 )
 @click.option(
-    '-c', '--compact',
+    '--no-stream',
     is_flag=True,
-    help='Use compact output mode'
+    help='Show full response at once instead of streaming'
 )
 @click.option(
     '-o', '--output',
@@ -126,7 +126,7 @@ def main(
     max_tokens: int,
     interactive: bool,
     files: tuple,
-    compact: bool,
+    no_stream: bool,
     output: Optional[str],
     save_code: Optional[str],
     no_stream: bool,
@@ -204,8 +204,8 @@ def main(
         temperature = config_manager.get('temperature', 0.7)
     if max_tokens is None:
         max_tokens = config_manager.get('max_tokens', 128000)
-    if not compact:
-        compact = config_manager.get('compact_mode', False)
+    # Default to non-streaming mode (show full response)
+    compact_mode = no_stream or config_manager.get('compact_mode', True)
     
     # Map model names
     model_map = {
@@ -249,7 +249,7 @@ def main(
                 console.print("[dim]Starting interactive mode...[/dim]")  # Debug message
                 interactive_mode = InteractiveMode(
                     bedrock_client=bedrock_client,
-                    compact_mode=compact
+                    compact_mode=compact_mode
                 )
                 interactive_mode.run()
             except Exception as e:
@@ -292,10 +292,10 @@ def main(
             # Streaming response
             for chunk in bedrock_client.send_message(messages, system_prompt=system_prompt, stream=True):
                 response_text += chunk
-                if not compact:
+                if not compact_mode:
                     console.print(chunk, end="")
             
-            if compact:
+            if compact_mode:
                 console.print(response_text)
             else:
                 console.print()  # New line after streaming
