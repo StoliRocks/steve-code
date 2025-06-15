@@ -10,6 +10,7 @@ from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
 from rich.live import Live
 from rich.layout import Layout
+from rich.box import MINIMAL
 from dataclasses import dataclass
 import time
 
@@ -418,3 +419,40 @@ class StructuredOutput:
                 
                 self.console.print("\n[bold]Press Enter to review and execute this action[/bold]")
                 self.console.print("[dim]Or type a command (e.g., /help, /todo skip)[/dim]")
+    
+    def display_action_summary(self, todos: List[TodoItem]):
+        """Display a clean summary of actions.
+        
+        Args:
+            todos: List of todo items with action metadata
+        """
+        if not todos:
+            return
+        
+        # Build todo list content
+        todo_lines = []
+        for todo in todos:
+            if todo.status == "completed":
+                todo_lines.append(f"  [green]☑[/green] [dim strike]{todo.content}[/dim strike]")
+            elif todo.status == "failed":
+                todo_lines.append(f"  [red]☒[/red] [red strike]{todo.content}[/red strike]")
+            elif todo.status == "in_progress":
+                todo_lines.append(f"  [yellow]◐[/yellow] [yellow]{todo.content}[/yellow]")
+            else:  # pending
+                todo_lines.append(f"  ☐ {todo.content}")
+        
+        # Create the update panel with minimal box style
+        update_content = "\n".join(todo_lines)
+        
+        # Use the ● Update style indicator
+        self.console.print("\n[blue]●[/blue] Update Todos")
+        
+        # Show the todo panel with indentation
+        panel = Panel(
+            update_content,
+            border_style="dim",
+            box=MINIMAL,
+            padding=(0, 2),
+            expand=False
+        )
+        self.console.print(panel)

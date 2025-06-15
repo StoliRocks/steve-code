@@ -1,4 +1,4 @@
-"""Action confirmation dialogs with Claude Code-style presentation."""
+"""Action confirmation dialogs with rich presentation."""
 
 from typing import Optional, List, Tuple
 from pathlib import Path
@@ -16,7 +16,7 @@ from prompt_toolkit.formatted_text import HTML
 
 
 class ActionConfirmation:
-    """Provides Claude Code-style confirmation dialogs for actions."""
+    """Provides rich confirmation dialogs for actions."""
     
     def __init__(self, console: Console):
         """Initialize confirmation dialog handler.
@@ -112,7 +112,7 @@ class ActionConfirmation:
             event.app.exit()
             
         @kb.add('2')
-        @kb.add(Keys.Tab)
+        @kb.add(Keys.BackTab)  # Shift+Tab
         def yes_dont_ask(event):
             result['choice'] = 2
             event.app.exit()
@@ -126,13 +126,13 @@ class ActionConfirmation:
         
         # Show options
         options = [
-            "[bold]1. Yes[/bold]",
-            "[dim]2. Yes, and don't ask again this session (tab)[/dim]",
-            "[dim]3. No (esc)[/dim]"
+            " ❯ [bold]1. Yes[/bold]",
+            "   [dim]2. Yes, and don't ask again this session (shift+tab)[/dim]",
+            "   [dim]3. No, cancel (esc)[/dim]"
         ]
         
         for opt in options:
-            self.console.print(f"  {opt}")
+            self.console.print(opt)
         
         # Get user choice
         try:

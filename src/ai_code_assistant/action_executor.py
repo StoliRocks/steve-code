@@ -358,9 +358,18 @@ class ActionExecutor:
             # Determine priority based on command type
             priority = "high" if any(x in cmd.command for x in ['mkdir', 'npm init', 'cdk init']) else "medium"
             
+            # Use description if available, otherwise truncate long commands
+            if cmd.description:
+                content = cmd.description
+            else:
+                if len(cmd.command) > 50:
+                    content = f"{cmd.command[:47]}..."
+                else:
+                    content = cmd.command
+            
             todos.append(TodoItem(
                 id=f"action_{todo_id}",
-                content=f"Execute: {cmd.description or cmd.command}",
+                content=content,
                 status="pending",
                 priority=priority,
                 metadata={'type': 'command', 'action': cmd}
@@ -374,11 +383,8 @@ class ActionExecutor:
             except ValueError:
                 rel_path = action.file_path
             
-            content_desc = f"Create file: {rel_path}"
-            if action.action_type == 'modify':
-                content_desc = f"Modify file: {rel_path}"
-            elif action.action_type == 'delete':
-                content_desc = f"Delete file: {rel_path}"
+            # Use concise format without redundant "file" word
+            content_desc = f"{action.action_type.title()} {rel_path}"
             
             todos.append(TodoItem(
                 id=f"action_{todo_id}",

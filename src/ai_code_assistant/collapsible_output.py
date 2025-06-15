@@ -90,7 +90,7 @@ class CollapsibleOutput:
         
     def format_tool_usage(self, tool_name: str, args: str, output: str = None, 
                          collapsed: bool = True, status: str = "complete") -> None:
-        """Format tool usage in Claude Code style.
+        """Format tool usage with clean presentation.
         
         Args:
             tool_name: Name of the tool (Read, Write, Bash, etc.)
@@ -99,21 +99,16 @@ class CollapsibleOutput:
             collapsed: Whether to show collapsed by default
             status: Status of the operation ('running', 'complete', 'error')
         """
-        # Status icons
-        status_icons = {
-            'running': '[yellow]⟳[/yellow]',
-            'complete': '[green]✓[/green]',
-            'error': '[red]✗[/red]',
-            'pending': '[dim]○[/dim]'
-        }
-        
-        icon = status_icons.get(status, status_icons['complete'])
-        
         # Get tool-specific color
         tool_color = self.tool_colors.get(tool_name, 'white')
         
-        # Tool invocation with status icon and tool-specific color
-        self.console.print(f"\n{icon} [bold {tool_color}]{tool_name}[/bold {tool_color}]([cyan]{args}[/cyan])")
+        # Tool invocation with clean style bullet
+        if status == 'running':
+            self.console.print(f"\n[blue]●[/blue] [bold {tool_color}]{tool_name}[/bold {tool_color}]([cyan]{args}[/cyan]) [dim]Running...[/dim]")
+        elif status == 'error':
+            self.console.print(f"\n[blue]●[/blue] [bold {tool_color}]{tool_name}[/bold {tool_color}]([cyan]{args}[/cyan])")
+        else:
+            self.console.print(f"\n[blue]●[/blue] [bold {tool_color}]{tool_name}[/bold {tool_color}]([cyan]{args}[/cyan])")
         
         if output:
             lines = output.split('\n')
@@ -228,7 +223,7 @@ class CollapsibleOutput:
                             content: Optional[str] = None, 
                             line_count: Optional[int] = None,
                             status: str = "complete") -> None:
-        """Format file operations in Claude Code style.
+        """Format file operations with clean presentation.
         
         Args:
             operation: Type of operation ('read', 'write', 'edit', 'create')
@@ -464,7 +459,7 @@ class CollapsibleOutput:
         return None
     
     def display_summary(self, sections: List[CollapsibleSection]):
-        """Display a summary of sections in Claude Code style.
+        """Display a summary of sections with clean presentation.
         
         Args:
             sections: List of sections to summarize
@@ -557,7 +552,7 @@ class CollapsibleOutput:
     
     def format_command_output(self, command: str, output: str, 
                             exit_code: int = 0, duration: Optional[float] = None) -> None:
-        """Format command execution output in Claude Code style.
+        """Format command execution output with clean presentation.
         
         Args:
             command: The command that was executed

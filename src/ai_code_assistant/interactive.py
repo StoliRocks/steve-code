@@ -1435,24 +1435,8 @@ Example response for "summarize the screenshots":
             # Convert to todos
             self.action_todos = self.action_executor.actions_to_todos(file_actions, command_actions)
             
-            # Display as todo list
-            self.structured_output.display_action_todos(self.action_todos)
-            
-            # Show clear summary of what will happen
-            if self.action_todos:
-                self.console.print("\n[bold green]✓ Actions identified:[/bold green]")
-                
-                # Count action types
-                file_count = sum(1 for t in self.action_todos if t.metadata and t.metadata['type'] == 'file')
-                cmd_count = sum(1 for t in self.action_todos if t.metadata and t.metadata['type'] == 'command')
-                
-                if file_count > 0:
-                    self.console.print(f"  • {file_count} file{'s' if file_count > 1 else ''} to create/modify")
-                if cmd_count > 0:
-                    self.console.print(f"  • {cmd_count} command{'s' if cmd_count > 1 else ''} to execute")
-                
-                self.console.print("\n[yellow]Actions require your approval before execution[/yellow]")
-                self.console.print("[dim]Press Enter to review the first action[/dim]")
+            # Display as clean todo summary
+            self.structured_output.display_action_summary(self.action_todos)
                 
         else:
             # Check if response looks like it has unstructured actions
@@ -1464,8 +1448,8 @@ Example response for "summarize the screenshots":
                     # Convert to todos
                     self.action_todos = self.action_executor.actions_to_todos(file_actions, command_actions)
                     
-                    # Display as todo list
-                    self.structured_output.display_action_todos(self.action_todos)
+                    # Display as clean summary
+                    self.structured_output.display_action_summary(self.action_todos)
                     
                     # Show hint
                     self.console.print("\n[yellow]💡 Tip: Actions detected from response[/yellow]")
@@ -1797,18 +1781,17 @@ Example response for "summarize the screenshots":
                         path = os.path.join(os.getcwd(), path)
                     
                     os.chdir(path)
-                    # Format like Claude Code
-                    self.console.print(f"● Bash(cd {command[3:].strip()})")
+                    # Format with clean style
+                    self.collapsible_output.format_tool_usage("Bash", f"cd {command[3:].strip()}")
                     self.console.print(f"  [green]✓ Changed to {os.getcwd()}[/green]")
                     return
                 except Exception as e:
-                    self.console.print(f"● Bash(cd {command[3:].strip()})")
+                    self.collapsible_output.format_tool_usage("Bash", f"cd {command[3:].strip()}", status="error")
                     self.console.print(f"  [red]✗ Failed: {e}[/red]")
                     return
             
-            # Show command execution in Claude Code style
-            self.console.print(f"● Bash({command})")
-            self.console.print(f"  [dim]Running...[/dim]")
+            # Show command execution with clean style
+            self.collapsible_output.format_tool_usage("Bash", command, status="running")
             
             # Execute command with a timeout
             import subprocess
