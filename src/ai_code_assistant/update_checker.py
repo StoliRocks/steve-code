@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Tuple
@@ -123,11 +124,24 @@ class UpdateChecker:
         print("Updating Steve Code...")
         
         try:
-            # Try to update using pip
-            cmd = [
-                sys.executable, "-m", "pip", "install", "--upgrade",
-                f"git+https://github.com/{self.owner}/{self.repo}.git@v{latest_version}"
-            ]
+            # Check if installed via pipx
+            pipx_venv = os.environ.get('PIPX_HOME') or Path.home() / '.local' / 'share' / 'pipx' / 'venvs'
+            is_pipx = 'pipx' in sys.executable or pipx_venv.exists()
+            
+            if is_pipx:
+                # Use pipx to reinstall from git
+                cmd = [
+                    "pipx", "install", "--force",
+                    f"git+https://github.com/{self.owner}/{self.repo}.git@v{latest_version}"
+                ]
+                print("[dim]Detected pipx installation, using pipx to upgrade...[/dim]")
+            else:
+                # Use pip to upgrade
+                cmd = [
+                    sys.executable, "-m", "pip", "install", "--upgrade",
+                    f"git+https://github.com/{self.owner}/{self.repo}.git@v{latest_version}"
+                ]
+                print("[dim]Using pip to upgrade...[/dim]")
             
             result = subprocess.run(
                 cmd,
@@ -142,13 +156,19 @@ class UpdateChecker:
             else:
                 print(f"Error updating: {result.stderr}")
                 print(f"\nTo update manually, run:")
-                print(f"  pip install --upgrade git+https://github.com/{self.owner}/{self.repo}.git")
+                if is_pipx:
+                    print(f"  pipx install --force git+https://github.com/{self.owner}/{self.repo}.git")
+                else:
+                    print(f"  pip install --upgrade git+https://github.com/{self.owner}/{self.repo}.git")
                 return False
                 
         except Exception as e:
             print(f"Error during update: {e}")
             print(f"\nTo update manually, run:")
-            print(f"  pip install --upgrade git+https://github.com/{self.owner}/{self.repo}.git")
+            if is_pipx:
+                print(f"  pipx install --force git+https://github.com/{self.owner}/{self.repo}.git")
+            else:
+                print(f"  pip install --upgrade git+https://github.com/{self.owner}/{self.repo}.git")
             return False
     
     def _is_cache_valid(self) -> bool:
