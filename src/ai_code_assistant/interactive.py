@@ -235,7 +235,7 @@ class InteractiveMode:
         self.last_update_message = None
         
         # Initialize execution planner
-        self.execution_planner = ExecutionPlanner(bedrock_client, console)
+        self.execution_planner = ExecutionPlanner(bedrock_client, self.console)
     
     def _create_prompt_style(self) -> Style:
         """Create prompt style."""
