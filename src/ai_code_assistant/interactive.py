@@ -87,7 +87,6 @@ class InteractiveMode:
         '/screenshot': 'Take a screenshot for analysis',
         '/image': 'Add image files for analysis',
         '/update': 'Check for and install updates',
-        '/check-update': 'Check for updates (debug)',
     }
     
     def __init__(
@@ -249,38 +248,6 @@ class InteractiveMode:
         else:
             self.console.print(f"[green]You're already on the latest version![/green]")
     
-    def _handle_check_update(self):
-        """Debug command to check for updates."""
-        from .version import __version__
-        self.console.print(f"[dim]Current version: v{__version__}[/dim]")
-        self.console.print("[dim]Checking for updates (forced, no cache)...[/dim]")
-        
-        try:
-            # Force a fresh check
-            update_info = self.update_checker.check_for_update(force=True)
-            
-            if update_info:
-                latest_version, download_url = update_info
-                self.console.print(f"[yellow]📦 Update available: v{latest_version}[/yellow]")
-                self.console.print(f"[dim]Download URL: {download_url}[/dim]")
-                self.update_available = True
-            else:
-                self.console.print("[green]✓ You're on the latest version![/green]")
-                
-            # Also show cache info
-            cache_file = UpdateChecker.CACHE_FILE
-            if cache_file.exists():
-                import json
-                cache_data = json.loads(cache_file.read_text())
-                checked_at = cache_data.get('checked_at', 'Unknown')
-                self.console.print(f"[dim]Last cached check: {checked_at}[/dim]")
-                
-        except Exception as e:
-            import traceback
-            self.console.print(f"[red]Update check failed: {e}[/red]")
-            if self.verbose_mode:
-                self.console.print("[dim]Traceback:[/dim]")
-                self.console.print(traceback.format_exc())
     
     def _background_update_check(self):
         """Background thread to check for updates periodically."""
@@ -573,9 +540,6 @@ class InteractiveMode:
         
         elif cmd == '/update':
             self._handle_update()
-        
-        elif cmd == '/check-update':
-            self._handle_check_update()
         
         else:
             self.console.print(f"[red]Unknown command: {cmd}[/red]")

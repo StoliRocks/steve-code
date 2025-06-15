@@ -115,11 +115,6 @@ console = Console()
     is_flag=True,
     help='Check for updates and install if available'
 )
-@click.option(
-    '--check-update',
-    is_flag=True,
-    help='Check for updates without installing'
-)
 @click.argument('prompt', nargs=-1)
 def main(
     model: str,
@@ -133,7 +128,6 @@ def main(
     verbose: bool,
     version: bool,
     update: bool,
-    check_update: bool,
     prompt: tuple
 ):
     """Steve Code - A self-contained AI code assistant using AWS Bedrock.
@@ -156,7 +150,7 @@ def main(
         console.print(f"Steve Code v{__version__}")
         return
     
-    if check_update:
+    if update:
         console.print("Checking for updates...")
         checker = UpdateChecker()
         update_info = checker.check_for_update(force=True)
@@ -165,24 +159,11 @@ def main(
             console.print(f"[green]Update available: v{latest_version}[/green]")
             console.print(f"Current version: v{__version__}")
             console.print(f"Release: {url}")
-            console.print("\nTo update, run: [yellow]steve-code --update[/yellow]")
+            # auto_update will ask for confirmation
+            checker.auto_update(confirm=True)
         else:
             console.print(f"[green]You're up to date! (v{__version__})[/green]")
         return
-    
-    if update:
-        checker = UpdateChecker()
-        if checker.auto_update():
-            return
-        else:
-            # auto_update returns False if user declined or if no updates
-            # Check if there actually was an update available
-            update_info = checker.check_for_update(force=True)
-            if update_info:
-                console.print("[yellow]Update cancelled[/yellow]")
-            else:
-                console.print("[yellow]No updates available[/yellow]")
-            return
     
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
