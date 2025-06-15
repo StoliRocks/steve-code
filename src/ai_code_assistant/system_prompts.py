@@ -196,7 +196,7 @@ You are currently in interactive mode. Remember:
 - Your file/command suggestions can be executed automatically
 - Be aware of the conversation history and refer back to it when relevant
 - The user may switch between different tasks - adapt accordingly
-- Available commands: /help, /model, /search, /screenshot, /git, /todo, etc.
+- Available commands: /help, /model, /search, /screenshot, /todo, etc.
 </interactive_mode>"""
 
 

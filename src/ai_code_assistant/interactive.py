@@ -30,7 +30,6 @@ from .conversation import ConversationHistory
 from .code_extractor import CodeExtractor
 from .file_context import FileContextManager
 from .config import ConfigManager
-from .git_integration import GitIntegration, GitStatus
 from .web_search import WebSearcher, SmartWebSearch
 from .image_handler import ImageHandler
 from .command_completer import CommandCompleter
@@ -84,11 +83,6 @@ class InteractiveMode:
         '/settings': 'Show or modify settings (use /settings <key> <value>)',
         '/set': 'Set a configuration value (temperature, max_tokens, region, auto_detect, verbose)',
         '/config': 'Save current settings to config file',
-        '/git': 'Show git status',
-        '/git diff': 'Show git diff of unstaged changes',
-        '/git diff --staged': 'Show git diff of staged changes',
-        '/git log': 'Show recent git commits',
-        '/git commit': 'Create a git commit with AI-generated message',
         '/search': 'Search the web for current information',
         '/screenshot': 'Take a screenshot for analysis',
         '/image': 'Add image files for analysis',
@@ -141,13 +135,6 @@ class InteractiveMode:
         
         # System prompt - use model-specific prompt for interactive mode
         self.system_prompt = self.bedrock_client.get_default_system_prompt(interactive=True)
-        
-        # Initialize git integration (may fail if not in git repo)
-        try:
-            self.git = GitIntegration()
-        except RuntimeError:
-            self.git = None
-            self.console.print("[yellow]Note: Not in a git repository. Git commands unavailable.[/yellow]")
         
         # Initialize web search
         self.web_searcher = WebSearcher()
@@ -548,9 +535,6 @@ class InteractiveMode:
         
         elif cmd == '/config':
             self._save_config()
-        
-        elif cmd.startswith('/git'):
-            self._handle_git_command(user_input)
         
         elif cmd == '/search':
             self._handle_search(args)
@@ -1433,162 +1417,6 @@ Example response for "summarize the screenshots":
         except Exception as e:
             from rich.markup import escape
             self.console.print(f"\n[red]Error: {escape(str(e))}[/red]")
-    
-    def _handle_git_command(self, command: str):
-        """Handle git commands."""
-        if not self.git:
-            self.console.print("[red]Git commands not available - not in a git repository[/red]")
-            return
-        
-        parts = command.split()
-        
-        try:
-            if command == '/git' or command == '/git status':
-                # Show git status
-                status = self.git.get_status()
-                formatted_status = self.git.format_status_for_display(status)
-                self.console.print(Panel(formatted_status, title="Git Status", border_style="blue"))
-            
-            elif command == '/git diff':
-                # Show unstaged diff
-                diff = self.git.get_diff(staged=False)
-                if diff:
-                    syntax = Syntax(diff, "diff", theme="monokai", line_numbers=True)
-                    self.console.print(Panel(syntax, title="Git Diff (Unstaged)", border_style="yellow"))
-                else:
-                    self.console.print("[yellow]No unstaged changes[/yellow]")
-            
-            elif command == '/git diff --staged':
-                # Show staged diff
-                diff = self.git.get_diff(staged=True)
-                if diff:
-                    syntax = Syntax(diff, "diff", theme="monokai", line_numbers=True)
-                    self.console.print(Panel(syntax, title="Git Diff (Staged)", border_style="green"))
-                else:
-                    self.console.print("[yellow]No staged changes[/yellow]")
-            
-            elif command == '/git log':
-                # Show git log
-                log = self.git.get_log(limit=10, oneline=True)
-                self.console.print(Panel(log, title="Recent Commits", border_style="blue"))
-            
-            elif command == '/git commit':
-                # Create commit with AI-generated message
-                self._create_git_commit()
-            
-            else:
-                self.console.print(f"[red]Unknown git command: {command}[/red]")
-                self.console.print("[yellow]Available: /git, /git diff, /git diff --staged, /git log, /git commit[/yellow]")
-        
-        except Exception as e:
-            from rich.markup import escape
-            self.console.print(f"[red]Git error: {escape(str(e))}[/red]")
-    
-    def _create_git_commit(self):
-        """Create a git commit with AI-generated message."""
-        try:
-            # Get current status
-            status = self.git.get_status()
-            
-            if not status.staged and not status.modified:
-                self.console.print("[yellow]No changes to commit[/yellow]")
-                return
-            
-            # If no staged changes, ask to stage all
-            if not status.staged and status.modified:
-                self.console.print(f"\n[yellow]No staged changes found.[/yellow]")
-                self.console.print(f"You have {len(status.modified)} modified files.\n")
-                self.console.print("What would you like to do?")
-                self.console.print("  1. Stage all modified files")
-                self.console.print("  2. Let me stage files manually")
-                self.console.print("  3. Cancel")
-                
-                choice = self.session.prompt("\nChoice [1-3]: ")
-                
-                if choice == '1':
-                    self.console.print("\n● Git(add .)")
-                    self.git.stage_files(status.modified)
-                    self.console.print(f"  [green]✓ Staged {len(status.modified)} files[/green]")
-                    status = self.git.get_status()  # Refresh status
-                elif choice == '2':
-                    self.console.print("\n[dim]Stage files manually with:[/dim]")
-                    self.console.print("  git add <file>")
-                    self.console.print("  git add -p  (interactive staging)")
-                    return
-                else:
-                    self.console.print("[yellow]Commit cancelled[/yellow]")
-                    return
-            
-            # Get diff for commit message generation
-            diff = self.git.get_diff(staged=True)
-            if not diff:
-                self.console.print("[yellow]No staged changes to commit[/yellow]")
-                return
-            
-            # Show what will be committed
-            self.console.print("\n[bold]Files to be committed:[/bold]")
-            for file in status.staged[:10]:
-                self.console.print(f"  • {file}")
-            if len(status.staged) > 10:
-                self.console.print(f"  ... and {len(status.staged) - 10} more")
-            
-            # Generate commit message using AI
-            self.console.print("\n[dim]Generating commit message...[/dim]")
-            
-            prompt = f"""Based on the following git diff, generate a concise and descriptive commit message.
-Follow conventional commit format if possible (feat:, fix:, docs:, etc).
-
-Git diff:
-```diff
-{diff[:3000]}  # Limit diff size
-```
-
-Provide ONLY the commit message, no explanation."""
-            
-            messages = [Message(role="user", content=prompt)]
-            
-            commit_message = ""
-            for chunk in self.bedrock_client.send_message(messages, stream=True):
-                commit_message += chunk
-            
-            commit_message = commit_message.strip()
-            
-            # Show proposed message
-            self.console.print(f"\n[green]Proposed commit message:[/green]")
-            self.console.print(Panel(commit_message, border_style="green"))
-            
-            # Ask for confirmation with numbered choices
-            self.console.print("\nWhat would you like to do?")
-            self.console.print("  1. Use this message")
-            self.console.print("  2. Edit the message")
-            self.console.print("  3. Cancel")
-            
-            choice = self.session.prompt("\nChoice [1-3]: ")
-            
-            if choice == '2':
-                # Allow editing
-                commit_message = self.session.prompt("\nCommit message: ", default=commit_message)
-            elif choice != '1':
-                self.console.print("[yellow]Commit cancelled[/yellow]")
-                return
-            
-            # Create the commit
-            self.console.print("\n● Git(commit)")
-            commit_hash = self.git.commit(commit_message)
-            self.console.print(f"  [green]✓ Created commit {commit_hash[:8]}[/green]")
-            
-            # Show commit summary
-            lines = commit_message.split('\n')
-            if len(lines) > 2:
-                self.console.print(f"  {lines[0]}")
-                self.console.print(f"  [dim italic]... +{len(lines)-1} lines[/dim italic]")
-            else:
-                for line in lines:
-                    self.console.print(f"  {line}")
-            
-        except Exception as e:
-            from rich.markup import escape
-            self.console.print(f"[red]Error creating commit: {escape(str(e))}[/red]")
     
     def _display_response(self, response: str):
         """Display response with proper formatting and action detection."""
