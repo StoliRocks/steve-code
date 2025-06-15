@@ -53,16 +53,6 @@ logger = logging.getLogger(__name__)
 class InteractiveMode:
     """Interactive chat mode for the AI assistant."""
     
-    # Fun verbs for different query types
-    FUN_VERBS = {
-        'debug': ['🐛 Debugging', '🔍 Investigating', '🕵️ Sleuthing', '🔬 Analyzing'],
-        'implement': ['🔨 Building', '🏗️ Constructing', '⚡ Creating', '🎨 Crafting'],
-        'test': ['🧪 Testing', '🔧 Verifying', '✅ Checking', '🎯 Validating'],
-        'refactor': ['♻️ Refactoring', '🛠️ Improving', '✨ Polishing', '🔄 Restructuring'],
-        'explain': ['📚 Explaining', '🎓 Teaching', '💡 Illuminating', '🗣️ Clarifying'],
-        'review': ['👀 Reviewing', '📋 Examining', '🔎 Inspecting', '📝 Evaluating'],
-        'general': ['🤔 Thinking', '💭 Pondering', '🧠 Processing', '⚙️ Computing'],
-    }
     
     # Interactive commands
     COMMANDS = {
@@ -615,6 +605,14 @@ class InteractiveMode:
         for cmd, desc in self.COMMANDS.items():
             help_text += f"  [cyan]{cmd:<12}[/cyan] {desc}\n"
         
+        # Add keyboard shortcuts section
+        help_text += "\n[bold]Keyboard Shortcuts:[/bold]\n\n"
+        help_text += "  [cyan]ctrl+r[/cyan]      Expand collapsed output\n"
+        help_text += "  [cyan]ctrl+c[/cyan]      Interrupt current operation\n"
+        help_text += "  [cyan]ctrl+d[/cyan]      Exit interactive mode\n"
+        help_text += "  [cyan]↑/↓[/cyan]         Navigate command history\n"
+        help_text += "  [cyan]tab[/cyan]         Auto-complete files/commands\n"
+        
         self.console.print(Panel(help_text, title="Help", border_style="blue"))
     
     def _show_status(self):
@@ -1161,12 +1159,12 @@ Example response for "summarize the screenshots":
             
             # Show discovered files (only in verbose mode)
             if discovered_files and self.verbose_mode:
-                self.console.print(f"[green]Auto-discovered {len(discovered_files)} relevant files:[/green]")
-                for file in discovered_files[:5]:
+                self.console.print(f"\n● Auto-discovered {len(discovered_files)} relevant files")
+                for file in discovered_files[:3]:
                     rel_path = file.relative_to(self.root_path) if hasattr(file, 'relative_to') else file
-                    self.console.print(f"  • {rel_path}")
-                if len(discovered_files) > 5:
-                    self.console.print(f"  ... and {len(discovered_files) - 5} more")
+                    self.console.print(f"  {rel_path}")
+                if len(discovered_files) > 3:
+                    self.console.print(f"  [dim italic]... +{len(discovered_files) - 3} more files[/dim italic]")
             
             # Add plan info to context if we found useful information
             if plan.get('project_info') or plan.get('analysis_approach'):
@@ -1317,8 +1315,9 @@ Example response for "summarize the screenshots":
             stats = self.context_manager.get_context_stats(current_messages)
             
             if self.context_manager.should_warn(stats):
+                remaining_percent = 100 - stats.usage_percentage
                 self.console.print(
-                    f"[yellow]⚠ Context usage: {stats.formatted_status}[/yellow]"
+                    f"[yellow]Context left until auto-compact: {remaining_percent:.0f}%[/yellow]"
                 )
             
             # Show thinking indicator with progress
@@ -1342,11 +1341,21 @@ Example response for "summarize the screenshots":
                 self._display_response(response_text)
                 # Note: _display_response already calls _process_actions
             else:
-                # Detect query intent for fun verb
+                # Detect query intent for status message
                 query_context = self.analyze_query(user_input) if self.smart_context else None
                 intent = query_context.intent if query_context else 'general'
-                verbs = self.FUN_VERBS.get(intent, self.FUN_VERBS['general'])
-                verb = random.choice(verbs)
+                
+                # More descriptive status messages
+                status_messages = {
+                    'debug': '🔍 Analyzing the issue',
+                    'implement': '🔨 Crafting solution',
+                    'test': '🧪 Preparing tests',
+                    'refactor': '♻️ Improving code',
+                    'explain': '📚 Formulating explanation',
+                    'review': '👀 Reviewing code',
+                    'general': '🤔 Processing request'
+                }
+                status_message = status_messages.get(intent, status_messages['general'])
                 
                 # Start streaming with Live display
                 start_time = time.time()
@@ -1357,19 +1366,23 @@ Example response for "summarize the screenshots":
                     estimated_tokens = len(response_text) // 4
                     context_percent = 100 - stats.usage_percentage
                     
-                    # Build status line
+                    # Build status line with better formatting
                     status_parts = []
-                    status_parts.append(f"{verb}... ({int(elapsed)}s)")
-                    status_parts.append(f"⚙ {estimated_tokens/1000:.1f}k tokens")
+                    status_parts.append(f"● {status_message}... ({int(elapsed)}s)")
+                    status_parts.append(f"{estimated_tokens/1000:.1f}k tokens")
                     
-                    # Context with color
-                    context_color = "green" if context_percent > 30 else "yellow" if context_percent > 20 else "red"
-                    status_parts.append(f"[{context_color}]📊 {context_percent}%[/{context_color}]")
+                    # Context with better visual
+                    if context_percent > 30:
+                        context_color = "green"
+                    elif context_percent > 20:
+                        context_color = "yellow"
+                    else:
+                        context_color = "red"
                     
                     if context_percent <= 30:
-                        status_parts.append("[yellow]⚠ auto-compact at 20%[/yellow]")
+                        status_parts.append(f"[{context_color}]Context: {context_percent:.0f}% left[/{context_color}]")
                     
-                    status_parts.append("[dim]ESC to interrupt[/dim]")
+                    status_parts.append("[dim]esc to interrupt[/dim]")
                     
                     return " · ".join(status_parts)
                 
@@ -1462,11 +1475,25 @@ Example response for "summarize the screenshots":
             
             # If no staged changes, ask to stage all
             if not status.staged and status.modified:
-                self.console.print(f"[yellow]No staged changes. You have {len(status.modified)} modified files.[/yellow]")
-                response = self.session.prompt("Stage all modified files? (y/n): ")
-                if response.lower() == 'y':
+                self.console.print(f"\n[yellow]No staged changes found.[/yellow]")
+                self.console.print(f"You have {len(status.modified)} modified files.\n")
+                self.console.print("What would you like to do?")
+                self.console.print("  1. Stage all modified files")
+                self.console.print("  2. Let me stage files manually")
+                self.console.print("  3. Cancel")
+                
+                choice = self.session.prompt("\nChoice [1-3]: ")
+                
+                if choice == '1':
+                    self.console.print("\n● Git(add .)")
                     self.git.stage_files(status.modified)
+                    self.console.print(f"  [green]✓ Staged {len(status.modified)} files[/green]")
                     status = self.git.get_status()  # Refresh status
+                elif choice == '2':
+                    self.console.print("\n[dim]Stage files manually with:[/dim]")
+                    self.console.print("  git add <file>")
+                    self.console.print("  git add -p  (interactive staging)")
+                    return
                 else:
                     self.console.print("[yellow]Commit cancelled[/yellow]")
                     return
@@ -1509,20 +1536,34 @@ Provide ONLY the commit message, no explanation."""
             self.console.print(f"\n[green]Proposed commit message:[/green]")
             self.console.print(Panel(commit_message, border_style="green"))
             
-            # Ask for confirmation or edit
-            response = self.session.prompt("\nUse this message? (y)es, (e)dit, (c)ancel: ")
+            # Ask for confirmation with numbered choices
+            self.console.print("\nWhat would you like to do?")
+            self.console.print("  1. Use this message")
+            self.console.print("  2. Edit the message")
+            self.console.print("  3. Cancel")
             
-            if response.lower() == 'e':
+            choice = self.session.prompt("\nChoice [1-3]: ")
+            
+            if choice == '2':
                 # Allow editing
-                commit_message = self.session.prompt("Commit message: ", default=commit_message)
-            elif response.lower() != 'y':
+                commit_message = self.session.prompt("\nCommit message: ", default=commit_message)
+            elif choice != '1':
                 self.console.print("[yellow]Commit cancelled[/yellow]")
                 return
             
             # Create the commit
+            self.console.print("\n● Git(commit)")
             commit_hash = self.git.commit(commit_message)
-            self.console.print(f"\n[green]✓ Created commit: {commit_hash[:8]}[/green]")
-            self.console.print(f"[dim]Message: {commit_message}[/dim]")
+            self.console.print(f"  [green]✓ Created commit {commit_hash[:8]}[/green]")
+            
+            # Show commit summary
+            lines = commit_message.split('\n')
+            if len(lines) > 2:
+                self.console.print(f"  {lines[0]}")
+                self.console.print(f"  [dim italic]... +{len(lines)-1} lines[/dim italic]")
+            else:
+                for line in lines:
+                    self.console.print(f"  {line}")
             
         except Exception as e:
             from rich.markup import escape
@@ -1810,14 +1851,15 @@ Provide ONLY the commit message, no explanation."""
         if self.auto_compact_enabled:
             stats = self.context_manager.get_context_stats(messages)
             if stats.should_compact:
-                self.console.print("[yellow]Auto-compacting conversation history...[/yellow]")
+                self.console.print("\n● Auto-compacting conversation history...")
                 messages = self.context_manager.compact_messages(messages)
                 
                 # Show new stats
                 new_stats = self.context_manager.get_context_stats(messages)
+                saved_tokens = stats.total_tokens - new_stats.total_tokens
                 self.console.print(
-                    f"[green]Compacted: {stats.total_tokens:,} → {new_stats.total_tokens:,} tokens "
-                    f"({new_stats.remaining_tokens:,} available)[/green]"
+                    f"  [green]✓ Freed {saved_tokens:,} tokens "
+                    f"({100 - new_stats.usage_percentage:.0f}% context available)[/green]\n"
                 )
         
         return messages
@@ -1932,9 +1974,6 @@ Provide ONLY the commit message, no explanation."""
                     return
         
         try:
-            # Show command being executed
-            self.console.print(f"[dim]$ {command}[/dim]")
-            
             # Handle cd command specially to change working directory
             if command.strip().startswith('cd '):
                 path = command[3:].strip()
@@ -1952,14 +1991,22 @@ Provide ONLY the commit message, no explanation."""
                         path = os.path.join(os.getcwd(), path)
                     
                     os.chdir(path)
-                    self.console.print(f"[green]Changed directory to: {os.getcwd()}[/green]")
+                    # Format like Claude Code
+                    self.console.print(f"● Bash(cd {command[3:].strip()})")
+                    self.console.print(f"  [green]✓ Changed to {os.getcwd()}[/green]")
                     return
                 except Exception as e:
-                    self.console.print(f"[red]Failed to change directory: {e}[/red]")
+                    self.console.print(f"● Bash(cd {command[3:].strip()})")
+                    self.console.print(f"  [red]✗ Failed: {e}[/red]")
                     return
+            
+            # Show command execution in Claude Code style
+            self.console.print(f"● Bash({command})")
+            self.console.print(f"  [dim]Running...[/dim]")
             
             # Execute command with a timeout
             import subprocess
+            start_time = time.time()
             result = subprocess.run(
                 command,
                 shell=True,
@@ -1968,17 +2015,32 @@ Provide ONLY the commit message, no explanation."""
                 timeout=30,  # 30 second timeout
                 cwd=os.getcwd()
             )
+            elapsed = time.time() - start_time
             
-            # Display output
+            # Format output
+            output_lines = []
             if result.stdout:
-                self.console.print(result.stdout.rstrip())
-            
+                output_lines.extend(result.stdout.rstrip().split('\n'))
             if result.stderr:
-                self.console.print(f"[red]{result.stderr.rstrip()}[/red]")
+                output_lines.extend([f"[red]{line}[/red]" for line in result.stderr.rstrip().split('\n')])
             
-            # Show exit code if non-zero
-            if result.returncode != 0:
-                self.console.print(f"[red]Exit code: {result.returncode}[/red]")
+            # Show collapsible output
+            if len(output_lines) > 3:
+                # Show first 3 lines
+                for line in output_lines[:3]:
+                    self.console.print(f"  {line}")
+                remaining = len(output_lines) - 3
+                self.console.print(f"  [dim italic]... +{remaining} lines (ctrl+r to expand)[/dim italic]")
+            else:
+                # Show all lines if 3 or fewer
+                for line in output_lines:
+                    self.console.print(f"  {line}")
+            
+            # Show status
+            if result.returncode == 0:
+                self.console.print(f"  [green]✓ Completed in {elapsed:.1f}s[/green]")
+            else:
+                self.console.print(f"  [red]✗ Exit code: {result.returncode}[/red]")
             
             # Add to conversation history for context
             output = result.stdout + (f"\n{result.stderr}" if result.stderr else "")
