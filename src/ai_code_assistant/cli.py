@@ -24,6 +24,8 @@ import click
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.logging import RichHandler
+import boto3
+from botocore.exceptions import NoCredentialsError, ClientError
 
 from . import __version__
 from .bedrock_client import BedrockClient, ModelType, Message
@@ -181,15 +183,41 @@ def main(
         logging.getLogger().setLevel(logging.DEBUG)
     
     
-    # Check AWS credentials
-    if not (os.environ.get('AWS_ACCESS_KEY_ID') or os.environ.get('AWS_PROFILE')):
+    # Check AWS credentials using boto3's credential chain
+    try:
+        # This will attempt to load credentials from all sources boto3 supports:
+        # 1. Environment variables
+        # 2. AWS credentials file (~/.aws/credentials)
+        # 3. AWS config file (~/.aws/config)
+        # 4. Instance metadata service
+        # 5. Container credentials
+        session = boto3.Session()
+        credentials = session.get_credentials()
+        
+        if credentials is None:
+            raise NoCredentialsError()
+            
+        # Try to get caller identity to verify credentials work
+        if verbose:
+            try:
+                sts = session.client('sts')
+                identity = sts.get_caller_identity()
+                console.print(f"[dim]Using AWS identity: {identity.get('Arn', 'Unknown')}[/dim]")
+            except Exception:
+                pass  # Don't fail if STS check fails
+                
+    except NoCredentialsError:
         console.print(
             "[red]AWS credentials not found![/red]\n\n"
             "Please configure your AWS credentials:\n"
             "  • Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables\n"
             "  • Or run 'aws configure' to set up credentials\n"
-            "  • Or use IAM roles if running on EC2"
+            "  • Or use IAM roles if running on EC2\n\n"
+            "[dim]Note: If you just ran 'aws configure', try opening a new terminal[/dim]"
         )
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error checking AWS credentials: {e}[/red]")
         sys.exit(1)
     
     
