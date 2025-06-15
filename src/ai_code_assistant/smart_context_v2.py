@@ -325,8 +325,24 @@ class SmartContextV2:
                 "\n=== End Project Summary ===\n"
             )
         
-        # Add file contents
-        file_context = self.file_manager.create_context_from_files(sorted_files)
+        # Separate text files from image files
+        from .image_handler import ImageHandler
+        image_handler = ImageHandler()
+        
+        text_files = []
+        image_files = []
+        
+        for file_path in sorted_files:
+            if image_handler.is_image_file(file_path):
+                image_files.append(file_path)
+            else:
+                text_files.append(file_path)
+        
+        # Add text file contents
+        if text_files:
+            file_context = self.file_manager.create_context_from_files(text_files)
+        else:
+            file_context = ""
         context_parts.append(file_context)
         
         return '\n'.join(context_parts)

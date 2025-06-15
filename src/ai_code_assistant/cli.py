@@ -46,6 +46,11 @@ logging.basicConfig(
     handlers=[RichHandler(rich_tracebacks=True)]
 )
 
+# Suppress boto3/botocore credential logging
+logging.getLogger('botocore.credentials').setLevel(logging.WARNING)
+logging.getLogger('boto3').setLevel(logging.WARNING)
+logging.getLogger('urllib3').setLevel(logging.WARNING)
+
 console = Console()
 
 

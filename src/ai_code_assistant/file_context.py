@@ -188,6 +188,11 @@ class FileContextManager:
                 
                 for file_path in file_paths:
                     progress.update(task, description=f"Reading {file_path.name}")
+                    # Skip image files - they should be handled separately
+                    if file_path.suffix.lower() in {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'}:
+                        self.logger.debug(f"Skipping image file: {file_path}")
+                        progress.advance(task)
+                        continue
                     content = self.read_file(file_path)
                     if content is not None:
                         context_parts.append(self.format_file_content(file_path, content))
@@ -195,6 +200,10 @@ class FileContextManager:
         else:
             # No progress bar for single file or when disabled
             for file_path in file_paths:
+                # Skip image files - they should be handled separately
+                if file_path.suffix.lower() in {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'}:
+                    self.logger.debug(f"Skipping image file: {file_path}")
+                    continue
                 content = self.read_file(file_path)
                 if content is not None:
                     context_parts.append(self.format_file_content(file_path, content))
