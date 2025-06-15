@@ -16,17 +16,18 @@ A self-contained AI code assistant CLI tool that mimics Claude Code's functional
 - **Git Integration**: View status, diffs, logs, and create commits with AI-generated messages
 - **Automatic Retry Logic**: Handles transient AWS errors with exponential backoff
 - **Progress Indicators**: Visual feedback during file reading and API calls
-- **Smart File Context**: Automatically includes related files (imports, tests, configs)
+- **Dynamic File Discovery**: AI-powered file discovery based on your queries - no hardcoded patterns
 - **Web Search**: Search the web for current information and documentation
 - **Image/Screenshot Support**: Analyze images, screenshots, and visual content
 - **Path Autocomplete**: Tab completion for file paths and commands
 - **Auto-Detection**: Automatically fetches URLs and detects images in your prompts
 - **Context Management**: Track token usage and auto-compact when nearing limits
-- **Smart Prompts**: Shows remaining tokens when context usage is high
+- **Claude Code-style UI**: Clean collapsible output with status indicators and keyboard shortcuts
 - **Auto-Update**: Check for updates and install new versions from the command line
 - **Verbose Mode**: Control visibility of technical details and implementation info
 - **Background Updates**: Automatic update checks every 30 minutes in interactive mode
 - **Clean Output**: Technical details and file detection hidden by default for cleaner UX
+- **Language Agnostic**: Works with any programming language or project structure
 
 ## Installation
 
@@ -424,11 +425,14 @@ steve-code/
 │       ├── git_integration.py   # Git operations
 │       ├── web_search.py        # Web search capability
 │       ├── image_handler.py     # Image/screenshot support
-│       ├── smart_context.py     # Smart file analysis
+│       ├── related_files.py     # File relationship analysis
+│       ├── query_analyzer.py    # Query analysis and file discovery
+│       ├── execution_planner.py # AI-powered execution planning
 │       ├── auto_detection.py    # Auto-detect URLs/images
 │       ├── context_manager.py   # Token tracking & compaction
 │       ├── update_checker.py    # Version update checking
 │       ├── response_processor.py # Clean AI responses for display
+│       ├── collapsible_output.py # Claude Code-style UI formatting
 │       └── version.py           # Version information
 ├── tests/                      # Unit tests
 ├── requirements.txt            # Python dependencies
