@@ -55,7 +55,7 @@ class ContextManager:
         try:
             # Use cl100k_base encoding (GPT-4/Claude compatible)
             self.encoder = tiktoken.get_encoding("cl100k_base")
-            logger.info("Using tiktoken for accurate token counting")
+            logger.debug("Using tiktoken for accurate token counting")
         except Exception as e:
             logger.warning(f"tiktoken not available, using estimation: {e}")
     

@@ -171,7 +171,16 @@ class FileContextManager:
         if self.use_smart_context and self.smart_context and include_related:
             file_paths = self.smart_context.get_smart_context(file_paths)
             if len(file_paths) > original_count:
-                self.console.print(f"[dim]Including {len(file_paths) - original_count} related files[/dim]")
+                # Check if there are any image files
+                image_count = sum(1 for f in file_paths if f.suffix.lower() in {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'})
+                text_count = len(file_paths) - image_count
+                
+                if image_count > 0 and text_count > 0:
+                    self.console.print(f"Including {text_count} text files and {image_count} images")
+                elif image_count > 0:
+                    self.console.print(f"Including {image_count} images")
+                else:
+                    self.console.print(f"Including {len(file_paths) - original_count} related files")
         
         context_parts = []
         

@@ -1033,6 +1033,9 @@ Provide a JSON response with:
 2. "requires_code_analysis": true/false - whether this needs local code analysis
 3. "suggested_actions": List of 2-5 specific actions to take
 4. "files_needed": true/false - whether we should auto-discover files
+5. "file_search_patterns": List of glob patterns to find relevant files (e.g., "*.png", "**/*.py", "src/**/*.js")
+6. "file_extensions": List of file extensions to look for (e.g., [".png", ".jpg", ".py"])
+7. "search_keywords": Keywords to search for in filenames
 
 Be extremely proactive - assume the user wants immediate help with their local code.
 If they mention "my" anything, they mean the code in the current directory.
@@ -1042,18 +1045,24 @@ DEFAULT TO TRUE for requires_code_analysis unless the query is clearly not about
 Examples that require code analysis: recommendations, help, improve, review, debug, etc.
 Examples that don't: "what is Python?", "explain git", "how does AWS work?"
 
+Special handling:
+- If user mentions "screenshots", "images", "pictures" -> include image extensions
+- If user mentions specific file types -> include those extensions
+- If user wants to analyze visuals -> set file_extensions to image formats
+
 Example response:
 {{
-  "intent": "User wants code quality recommendations for their application",
-  "requires_code_analysis": true,
+  "intent": "User wants to analyze screenshots in the project",
+  "requires_code_analysis": false,
   "suggested_actions": [
-    "Analyze main application files for code quality issues",
-    "Check for security vulnerabilities",
-    "Review architecture and design patterns",
-    "Suggest performance optimizations",
-    "Identify testing gaps"
+    "Find all screenshot/image files in the project",
+    "Analyze the visual content of each image",
+    "Provide a summary of what's shown"
   ],
-  "files_needed": true
+  "files_needed": true,
+  "file_search_patterns": ["*.png", "*.jpg", "*screenshot*.*"],
+  "file_extensions": [".png", ".jpg", ".jpeg", ".gif"],
+  "search_keywords": ["screenshot", "image", "screen"]
 }}"""
 
         try:
@@ -1133,8 +1142,35 @@ Example response:
         if should_discover and not self.context_files:  # Don't override manual files
             with self.console.status("[dim]Discovering relevant files for analysis...[/dim]", spinner="dots"):
                 
-                # First, try project analyzer if available
-                if self.project_analyzer:
+                # First, use AI-suggested file patterns if available
+                if intent_analysis and intent_analysis.get('file_search_patterns'):
+                    for pattern in intent_analysis.get('file_search_patterns', []):
+                        try:
+                            # Handle both simple patterns (*.png) and recursive (**/*.py)
+                            if '**' in pattern:
+                                matches = list(Path(self.root_path).rglob(pattern.replace('**/', '')))
+                            else:
+                                matches = list(Path(self.root_path).glob(pattern))
+                            
+                            for match in matches:
+                                if match.is_file() and match not in discovered_files:
+                                    discovered_files.append(match)
+                                    if len(discovered_files) >= 15:  # Reasonable limit
+                                        break
+                        except Exception as e:
+                            logger.debug(f"Error with pattern {pattern}: {e}")
+                    
+                    # Also use file extensions if provided
+                    if not discovered_files and intent_analysis.get('file_extensions'):
+                        for ext in intent_analysis.get('file_extensions', []):
+                            for file_path in Path(self.root_path).rglob(f'*{ext}'):
+                                if file_path.is_file() and file_path not in discovered_files:
+                                    discovered_files.append(file_path)
+                                    if len(discovered_files) >= 15:
+                                        break
+                
+                # Then try project analyzer if we still need files
+                if not discovered_files and self.project_analyzer:
                     discovered_files = self.project_analyzer.suggest_files_for_query(user_input, max_suggestions=10)
                 
                 # If we need code analysis and don't have files yet, get them!
