@@ -1,4 +1,4 @@
-"""Smart file context management that automatically includes related files."""
+"""File relationship analysis to automatically include related files."""
 
 import ast
 import re
@@ -9,8 +9,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class SmartContextManager:
-    """Intelligently manages file context by analyzing dependencies."""
+class RelatedFilesManager:
+    """Manages file relationships by analyzing dependencies."""
     
     # Common config file patterns
     CONFIG_PATTERNS = {
@@ -336,7 +336,7 @@ class SmartContextManager:
         
         return file_path.name in indicators or file_path.name.startswith('test_')
     
-    def get_smart_context(self, files: List[Path], max_total_files: int = 10) -> List[Path]:
+    def get_related_context(self, files: List[Path], max_total_files: int = 10) -> List[Path]:
         """Get a smart context by analyzing file relationships.
         
         Args:

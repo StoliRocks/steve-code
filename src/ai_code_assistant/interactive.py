@@ -36,7 +36,7 @@ from .image_handler import ImageHandler
 from .command_completer import CommandCompleter
 from .auto_detection import AutoDetector
 from .context_manager import ContextManager, ContextStats
-from .smart_context_v2 import SmartContextV2
+from .query_analyzer import QueryAnalyzer
 from .structured_output import StructuredOutput, UpdateItem, TodoItem
 from .action_executor import ActionExecutor
 from .collapsible_output import CollapsibleOutput
@@ -175,7 +175,7 @@ class InteractiveMode:
         
         # Initialize smart context v2 for automatic file discovery
         try:
-            self.smart_context = SmartContextV2()
+            self.smart_context = QueryAnalyzer()
             self.auto_discover_files = True  # Enable by default
             
             # Analyze project on startup to understand context

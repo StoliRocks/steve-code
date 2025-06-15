@@ -1,4 +1,4 @@
-"""Enhanced smart context with automatic file discovery based on queries."""
+"""Query analysis and automatic file discovery based on user queries."""
 
 import logging
 from pathlib import Path
@@ -8,7 +8,7 @@ import re
 
 from .project_analyzer import ProjectAnalyzer, ProjectInfo
 from .file_context import FileContextManager
-from .smart_context import SmartContextManager
+from .related_files import RelatedFilesManager
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +23,8 @@ class QueryContext:
     keywords: List[str]  # Important keywords extracted
 
 
-class SmartContextV2:
-    """Enhanced smart context that automatically discovers relevant files."""
+class QueryAnalyzer:
+    """Analyzes queries and automatically discovers relevant files."""
     
     # Intent patterns
     INTENT_PATTERNS = {
@@ -63,7 +63,7 @@ class SmartContextV2:
         """
         self.project_analyzer = ProjectAnalyzer(project_root)
         self.file_manager = FileContextManager()
-        self.smart_context = SmartContextManager()
+        self.related_files = RelatedFilesManager()
         self.project_info: Optional[ProjectInfo] = None
         
     def analyze_query(self, query: str) -> QueryContext:
@@ -270,7 +270,7 @@ class SmartContextV2:
         if final_files and len(final_files) < max_files:
             # Use smart context to find related files for top results
             for main_file in final_files[:3]:
-                related = self.smart_context.find_related_files(
+                related = self.related_files.find_related_files(
                     main_file,
                     max_depth=1
                 )
@@ -311,7 +311,7 @@ class SmartContextV2:
             return ""
         
         # Sort files intelligently using get_smart_context
-        sorted_files = self.smart_context.get_smart_context(relevant_files)
+        sorted_files = self.related_files.get_related_context(relevant_files)
         
         # Create context using file manager
         context_parts = []

@@ -8,7 +8,7 @@ import logging
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 from rich.console import Console
 
-from .smart_context import SmartContextManager
+from .related_files import RelatedFilesManager
 
 
 class FileContextManager:
@@ -46,7 +46,7 @@ class FileContextManager:
         self.console = Console()
         self.show_progress = show_progress
         self.use_smart_context = use_smart_context
-        self.smart_context = SmartContextManager() if use_smart_context else None
+        self.smart_context = RelatedFilesManager() if use_smart_context else None
     
     def read_file(self, file_path: Path) -> Optional[str]:
         """Read a file's content.
@@ -169,7 +169,7 @@ class FileContextManager:
         # Use smart context if enabled
         original_count = len(file_paths)
         if self.use_smart_context and self.smart_context and include_related:
-            file_paths = self.smart_context.get_smart_context(file_paths)
+            file_paths = self.smart_context.get_related_context(file_paths)
             if len(file_paths) > original_count:
                 # Check if there are any image files
                 image_count = sum(1 for f in file_paths if f.suffix.lower() in {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'})
