@@ -7,6 +7,7 @@ import logging
 import time
 import random
 import threading
+import json
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime
@@ -44,6 +45,7 @@ from .action_reprocessor import ActionReprocessor
 from .response_filter import ResponseFilter
 from .response_processor import ResponseProcessor
 from .update_checker import UpdateChecker, get_update_message
+from .execution_planner import ExecutionPlanner
 
 logger = logging.getLogger(__name__)
 
@@ -231,6 +233,9 @@ class InteractiveMode:
         self.update_check_thread = None
         self.update_available = False
         self.last_update_message = None
+        
+        # Initialize execution planner
+        self.execution_planner = ExecutionPlanner(bedrock_client, console)
     
     def _create_prompt_style(self) -> Style:
         """Create prompt style."""
@@ -1104,26 +1109,6 @@ Example response for "summarize the screenshots":
     
     def _process_message(self, user_input: str):
         """Process a user message."""
-        # First, analyze intent if it seems code-related
-        intent_analysis = None
-        if any(indicator in user_input.lower() for indicator in ['my', 'code', 'app', 'project', 'recommend', 'suggest', 'help']):
-            with self.console.status("[dim]Understanding your request...[/dim]", spinner="dots"):
-                intent_analysis = self._analyze_intent(user_input)
-            
-            if intent_analysis.get('requires_code_analysis'):
-                # Show the analysis
-                self.console.print(f"[cyan]Intent: {intent_analysis['intent']}[/cyan]")
-                if intent_analysis.get('suggested_actions'):
-                    self.console.print("[green]Planning to:[/green]")
-                    for action in intent_analysis['suggested_actions']:
-                        self.console.print(f"  • {action}")
-                
-                # Debug: check if we have project info
-                if not self.project_analyzer:
-                    self.console.print("[yellow]Warning: Project analyzer not initialized[/yellow]")
-                elif not self.project_info:
-                    self.console.print("[yellow]Warning: Project info not available[/yellow]")
-        
         # Auto-detect content in the input
         detections = self.auto_detector.extract_all(user_input)
         
@@ -1136,26 +1121,25 @@ Example response for "summarize the screenshots":
         # Prepare content parts
         content_parts = []
         
-        # Auto-discover relevant files based on intent analysis
+        # Auto-discover relevant files based on dynamic planning
         discovered_files = []
         
-        # ALWAYS discover files if intent analysis says we need them
-        if intent_analysis and intent_analysis.get('requires_code_analysis'):
-            # Intent says we need to analyze code - ALWAYS do it
-            should_discover = True
-        else:
-            # Fallback: still auto-discover if enabled
-            should_discover = self.auto_discover_files
-        
-        if should_discover and not self.context_files:  # Don't override manual files
-            with self.console.status("[dim]Discovering relevant files for analysis...[/dim]", spinner="dots"):
-                
-                # First, use AI-suggested file patterns if available
-                if intent_analysis and intent_analysis.get('file_search_patterns'):
-                    if self.verbose_mode:
-                        self.console.print(f"[dim]AI suggested patterns: {intent_analysis.get('file_search_patterns')}[/dim]")
-                    
-                    for pattern in intent_analysis.get('file_search_patterns', []):
+        # Use ExecutionPlanner for dynamic discovery if enabled
+        if self.auto_discover_files and not self.context_files:  # Don't override manual files
+            # Create execution plan using AI
+            plan = self.execution_planner.create_plan(user_input, verbose=self.verbose_mode)
+            
+            # Show plan interpretation
+            if plan.get('interpretation'):
+                self.console.print(f"[cyan]Understanding: {plan['interpretation']}[/cyan]")
+            
+            # Process files from the plan
+            if plan.get('files_to_analyze'):
+                with self.console.status("[dim]Discovering relevant files based on analysis...[/dim]", spinner="dots"):
+                    for file_spec in plan['files_to_analyze']:
+                        pattern = file_spec.get('pattern', '')
+                        max_files = file_spec.get('max_files', 10)
+                        
                         try:
                             # Handle both simple patterns (*.png) and recursive (**/*.py)
                             if '**' in pattern:
@@ -1163,70 +1147,36 @@ Example response for "summarize the screenshots":
                             else:
                                 matches = list(Path(self.root_path).glob(pattern))
                             
-                            for match in matches:
+                            # Limit number of files
+                            for match in matches[:max_files]:
                                 if match.is_file() and match not in discovered_files:
                                     discovered_files.append(match)
-                                    if len(discovered_files) >= 15:  # Reasonable limit
+                                    if len(discovered_files) >= 20:  # Overall limit
                                         break
                         except Exception as e:
                             logger.debug(f"Error with pattern {pattern}: {e}")
-                    
-                    # Also use file extensions if provided
-                    if not discovered_files and intent_analysis.get('file_extensions'):
-                        for ext in intent_analysis.get('file_extensions', []):
-                            for file_path in Path(self.root_path).rglob(f'*{ext}'):
-                                if file_path.is_file() and file_path not in discovered_files:
-                                    discovered_files.append(file_path)
-                                    if len(discovered_files) >= 15:
-                                        break
-                
-                # Then try project analyzer if we still need files
-                if not discovered_files and self.project_analyzer:
-                    discovered_files = self.project_analyzer.suggest_files_for_query(user_input, max_suggestions=10)
-                
-                # If we need code analysis and don't have files yet, get them!
-                if intent_analysis and intent_analysis.get('requires_code_analysis') and not discovered_files:
-                    # Try to find main entry points
-                    if self.project_info and self.project_info.main_directories:
-                        for main_dir in self.project_info.main_directories[:2]:
-                            patterns = ['main.*', 'app.*', 'index.*', 'cli.*', '__main__.*']
-                            for pattern in patterns:
-                                for file_path in main_dir.glob(pattern):
-                                    if file_path.is_file() and file_path.suffix in ['.py', '.js', '.ts', '.java', '.go']:
-                                        discovered_files.append(file_path)
-                                        if len(discovered_files) >= 5:
-                                            break
-                            if discovered_files:
-                                break
-                    
-                    # Still no files? Get ANY code files
-                    if not discovered_files:
-                        self.console.print("[yellow]No main files found, searching for any code files...[/yellow]")
-                        # Just grab first few Python files
-                        for file in Path(self.root_path).rglob('*.py'):
-                            if file.is_file() and '__pycache__' not in str(file) and 'venv' not in str(file):
-                                discovered_files.append(file)
-                                if len(discovered_files) >= 5:
-                                    break
                         
-                        # If STILL no files, something is wrong
-                        if not discovered_files:
-                            self.console.print("[red]ERROR: No code files found in directory![/red]")
-                            self.console.print(f"[red]Working directory: {self.root_path}[/red]")
+                        if len(discovered_files) >= 20:
+                            break
             
-            # Fallback to smart context if available and project analyzer didn't work
-            if not discovered_files and self.smart_context:
-                with self.console.status("[dim]Analyzing query and discovering relevant files...[/dim]", spinner="dots"):
-                    discovered_files = self.smart_context.get_relevant_files(user_input, max_files=10)
-            
+            # Show discovered files (only in verbose mode)
             if discovered_files and self.verbose_mode:
-                # Show what files were discovered (only in verbose mode)
                 self.console.print(f"[green]Auto-discovered {len(discovered_files)} relevant files:[/green]")
                 for file in discovered_files[:5]:
                     rel_path = file.relative_to(self.root_path) if hasattr(file, 'relative_to') else file
                     self.console.print(f"  • {rel_path}")
                 if len(discovered_files) > 5:
                     self.console.print(f"  ... and {len(discovered_files) - 5} more")
+            
+            # Add plan info to context if we found useful information
+            if plan.get('project_info') or plan.get('analysis_approach'):
+                plan_context = []
+                if plan.get('project_info'):
+                    plan_context.append(f"[Project Analysis]\n{json.dumps(plan['project_info'], indent=2)}")
+                if plan.get('analysis_approach'):
+                    plan_context.append(f"[Approach]\n{plan['analysis_approach']}")
+                if plan_context:
+                    content_parts.append("\n\n".join(plan_context))
         
         # Add file context (manual files take precedence over discovered)
         files_to_include = self.context_files if self.context_files else discovered_files
