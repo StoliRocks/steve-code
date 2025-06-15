@@ -53,8 +53,10 @@ class CollapsibleSection:
             # Show collapsed with line count - Claude Code style
             # Determine expand key based on platform
             expand_key = "ctrl+r" if platform.system() != "Darwin" else "cmd+r"
-            hint = f"[dim]{self.line_count} lines[/dim] [dim italic]({expand_key} to expand)[/dim]"
-            console.print(f"[cyan]▸[/cyan] [bold]{self.title}[/bold]")
+            hint = f"[dim]{self.line_count} lines[/dim] [dim][italic]({expand_key} to expand)[/italic][/dim]"
+            from rich.markup import escape
+            escaped_title = escape(self.title)
+            console.print(f"[cyan]▸[/cyan] [bold]{escaped_title}[/bold]")
             console.print(f"  [dim]└─[/dim] {hint}")
 
 
@@ -149,7 +151,7 @@ class CollapsibleOutput:
                 # Show line count and expand hint
                 self.console.print(
                     f"  [dim]└─ {line_count} lines[/dim] "
-                    f"[dim italic]({expand_key} to expand)[/dim]"
+                    f"[dim][italic]({expand_key} to expand)[/italic][/dim]"
                 )
             else:
                 # Show full output
@@ -507,10 +509,12 @@ class CollapsibleOutput:
                 
                 # Show section with collapsed indicator
                 expand_key = "ctrl+r" if platform.system() != "Darwin" else "cmd+r"
+                from rich.markup import escape
+                escaped_title = escape(section.title)
                 self.console.print(
-                    f"\n  {icon} [cyan]▸[/cyan] [bold]{section.title}[/bold] "
+                    f"\n  {icon} [cyan]▸[/cyan] [bold]{escaped_title}[/bold] "
                     f"[dim]({section.line_count} lines)[/dim] "
-                    f"[dim italic]({expand_key} to expand)[/dim]"
+                    f"[dim][italic]({expand_key} to expand)[/italic][/dim]"
                 )
     
     def display_sections(self, sections: List[CollapsibleSection], 
