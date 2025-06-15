@@ -1107,59 +1107,63 @@ Example response for "summarize the screenshots":
     
     def _process_message(self, user_input: str):
         """Process a user message."""
-        # Show immediate processing indication
-        with self.console.status("[dim]● Processing your request...[/dim]", spinner="dots") as status:
+        # Show immediate processing indication - keep it running during all setup
+        with self.console.status("[dim]● Understanding your request...[/dim]", spinner="dots") as status:
             # Auto-detect content in the input
             detections = self.auto_detector.extract_all(user_input)
-            status.stop()  # Stop the initial spinner
-        
-        # Show what was detected (only in verbose mode)
-        if self.verbose_mode:
-            summary = self.auto_detector.format_detection_summary(detections)
-            if summary:
-                self.console.print(f"[dim]{summary}[/dim]")
-        
-        # Prepare content parts
-        content_parts = []
-        
-        # Auto-discover relevant files based on dynamic planning
-        discovered_files = []
-        plan = None  # Initialize plan variable
-        
-        # Use ExecutionPlanner for dynamic discovery if enabled
-        if self.auto_discover_files and not self.context_files:  # Don't override manual files
-            # Create execution plan using AI
-            plan = self.execution_planner.create_plan(user_input, verbose=self.verbose_mode)
+            
+            # Show what was detected (only in verbose mode)
+            if self.verbose_mode:
+                summary = self.auto_detector.format_detection_summary(detections)
+                if summary:
+                    status.stop()
+                    self.console.print(f"[dim]{summary}[/dim]")
+                    status.start()
+            
+            # Prepare content parts
+            content_parts = []
+            
+            # Auto-discover relevant files based on dynamic planning
+            discovered_files = []
+            plan = None  # Initialize plan variable
+            
+            # Use ExecutionPlanner for dynamic discovery if enabled
+            if self.auto_discover_files and not self.context_files:  # Don't override manual files
+                status.update("[dim]● Analyzing project context...[/dim]")
+                # Create execution plan using AI
+                plan = self.execution_planner.create_plan(user_input, verbose=self.verbose_mode)
             
             # Show plan interpretation
-            if plan.get('interpretation'):
+            if plan and plan.get('interpretation'):
+                status.stop()
                 self.console.print(f"[cyan]Understanding: {plan['interpretation']}[/cyan]")
+                status.start()
             
             # Process files from the plan
-            if plan.get('files_to_analyze'):
-                with self.console.status("[dim]Discovering relevant files based on analysis...[/dim]", spinner="dots"):
-                    for file_spec in plan['files_to_analyze']:
-                        pattern = file_spec.get('pattern', '')
-                        max_files = file_spec.get('max_files', 10)
+            if plan and plan.get('files_to_analyze'):
+                status.update("[dim]● Discovering relevant files...[/dim]")
+                for file_spec in plan['files_to_analyze']:
+                    pattern = file_spec.get('pattern', '')
+                    max_files = file_spec.get('max_files', 10)
+                    
+                    try:
+                        # Handle both simple patterns (*.png) and recursive (**/*.py)
+                        if '**' in pattern:
+                            matches = list(Path(self.root_path).rglob(pattern.replace('**/', '')))
+                        else:
+                            matches = list(Path(self.root_path).glob(pattern))
                         
-                        try:
-                            # Handle both simple patterns (*.png) and recursive (**/*.py)
-                            if '**' in pattern:
-                                matches = list(Path(self.root_path).rglob(pattern.replace('**/', '')))
-                            else:
-                                matches = list(Path(self.root_path).glob(pattern))
-                            
-                            # Limit number of files
-                            for match in matches[:max_files]:
-                                if match.is_file() and match not in discovered_files:
-                                    discovered_files.append(match)
-                                    if len(discovered_files) >= 20:  # Overall limit
-                                        break
-                        except Exception as e:
-                            logger.debug(f"Error with pattern {pattern}: {e}")
-                        
-                        if len(discovered_files) >= 20:
-                            break
+                        # Limit number of files
+                        for match in matches[:max_files]:
+                            if match.is_file() and match not in discovered_files:
+                                discovered_files.append(match)
+                                if len(discovered_files) >= 20:  # Overall limit
+                                    break
+                    except Exception as e:
+                        logger.debug(f"Error with pattern {pattern}: {e}")
+                    
+                    if len(discovered_files) >= 20:
+                        break
             
             # Show discovered files (only in verbose mode)
             if discovered_files and self.verbose_mode:
@@ -1194,16 +1198,22 @@ Example response for "summarize the screenshots":
             
             # Add text files to context
             if text_files:
+                status.update(f"[dim]● Reading {len(text_files)} file(s)...[/dim]")
                 if self.verbose_mode:
+                    status.stop()
                     self.console.print(f"[dim]Including {len(text_files)} text files in context...[/dim]")
+                    status.start()
                 context = self.file_manager.create_context_from_files(text_files)
                 if context:
                     content_parts.append(context)
                     if self.verbose_mode:
+                        status.stop()
                         self.console.print(f"[dim]Added {len(context)} characters of file content[/dim]")
+                        status.start()
             
             # Add image files to context_images
             if image_files:
+                status.stop()
                 self.console.print(f"[green]Found {len(image_files)} image(s) to analyze[/green]")
                 for img_path in image_files:
                     if img_path not in self.context_images:
@@ -1211,6 +1221,7 @@ Example response for "summarize the screenshots":
                         if self.verbose_mode:
                             rel_path = img_path.relative_to(self.root_path) if hasattr(img_path, 'relative_to') else img_path
                             self.console.print(f"  • {rel_path}")
+                status.start()
         
         # Auto-fetch URLs if detected
         if detections['urls']:
@@ -1273,6 +1284,13 @@ Example response for "summarize the screenshots":
         for img_path in detections['image_paths']:
             if img_path not in self.context_images:
                 self.context_images.append(img_path)
+        
+            # Update status before processing images
+            if self.context_images:
+                status.update("[dim]● Preparing images for analysis...[/dim]")
+        
+        # End of status context - close it before showing results
+        # This ensures the spinner runs during all preparation work
         
         # Check if we have images to include
         if self.context_images:
@@ -2023,9 +2041,11 @@ Provide ONLY the commit message, no explanation."""
             # Format output
             output_lines = []
             if result.stdout:
-                output_lines.extend(result.stdout.rstrip().split('\n'))
+                from rich.markup import escape
+                output_lines.extend([escape(line) for line in result.stdout.rstrip().split('\n')])
             if result.stderr:
-                output_lines.extend([f"[red]{line}[/red]" for line in result.stderr.rstrip().split('\n')])
+                from rich.markup import escape
+                output_lines.extend([f"[red]{escape(line)}[/red]" for line in result.stderr.rstrip().split('\n')])
             
             # Show collapsible output
             if len(output_lines) > 3:
