@@ -286,7 +286,7 @@ class InteractiveMode:
                 self.console.print("[green]✓ You're on the latest version![/green]")
                 
             # Also show cache info
-            cache_file = UpdateChecker().cache_file
+            cache_file = UpdateChecker.CACHE_FILE
             if cache_file.exists():
                 import json
                 cache_data = json.loads(cache_file.read_text())
@@ -314,6 +314,9 @@ class InteractiveMode:
                     time.sleep(30 * 60)  # 30 minutes
                 
                 # Check for updates
+                if self.verbose_mode:
+                    self.console.print("\n[dim]Background update check running...[/dim]")
+                    
                 update_info = self.update_checker.check_for_update(force=True)  # Force check
                 if update_info and not self.update_available:
                     self.update_available = True
@@ -326,8 +329,12 @@ class InteractiveMode:
                     )
                     # Print the update message (thread-safe with Rich console)
                     self.console.print(self.last_update_message)
+                elif self.verbose_mode:
+                    self.console.print("[dim]No updates found in background check[/dim]")
             except Exception as e:
                 logger.debug(f"Background update check failed: {e}")
+                if self.verbose_mode:
+                    self.console.print(f"[dim]Background update check error: {e}[/dim]")
     
     def _get_screenshot_capture(self):
         """Get or initialize screenshot capture lazily."""
