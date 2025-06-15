@@ -1107,8 +1107,11 @@ Example response for "summarize the screenshots":
     
     def _process_message(self, user_input: str):
         """Process a user message."""
-        # Auto-detect content in the input
-        detections = self.auto_detector.extract_all(user_input)
+        # Show immediate processing indication
+        with self.console.status("[dim]● Processing your request...[/dim]", spinner="dots") as status:
+            # Auto-detect content in the input
+            detections = self.auto_detector.extract_all(user_input)
+            status.stop()  # Stop the initial spinner
         
         # Show what was detected (only in verbose mode)
         if self.verbose_mode:
@@ -1121,6 +1124,7 @@ Example response for "summarize the screenshots":
         
         # Auto-discover relevant files based on dynamic planning
         discovered_files = []
+        plan = None  # Initialize plan variable
         
         # Use ExecutionPlanner for dynamic discovery if enabled
         if self.auto_discover_files and not self.context_files:  # Don't override manual files
@@ -1253,12 +1257,11 @@ Example response for "summarize the screenshots":
             if file_context:
                 content_parts.append(file_context)
         
-        # Add intent analysis to context if available
-        if intent_analysis and intent_analysis.get('requires_code_analysis'):
-            intent_context = f"\n[Intent Analysis]\nUser Intent: {intent_analysis['intent']}\nPlanned Actions:\n"
-            for action in intent_analysis.get('suggested_actions', []):
-                intent_context += f"- {action}\n"
-            content_parts.insert(0, intent_context)
+        # Add plan info to content if we created one
+        if plan and plan.get('analysis_approach'):
+            # Plan was created, add its approach to context
+            approach_context = f"\n[Analysis Approach]\n{plan['analysis_approach']}\n"
+            content_parts.insert(0, approach_context)
         
         # Combine text content
         if content_parts:
