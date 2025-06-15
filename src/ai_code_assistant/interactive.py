@@ -1049,20 +1049,28 @@ Special handling:
 - If user mentions "screenshots", "images", "pictures" -> include image extensions
 - If user mentions specific file types -> include those extensions
 - If user wants to analyze visuals -> set file_extensions to image formats
+- "my screenshots" or "the screenshots" means actual image files in the project
+- Do NOT analyze code capabilities - analyze actual visual content
 
-Example response:
+IMPORTANT: When user says "summarize the screenshots" they want you to:
+1. Find actual screenshot/image files (PNG, JPG, etc.)
+2. Look at the visual content
+3. Describe what's shown in the images
+They do NOT want you to explain screenshot functionality!
+
+Example response for "summarize the screenshots":
 {{
-  "intent": "User wants to analyze screenshots in the project",
+  "intent": "User wants me to analyze the visual content of screenshot images in the project",
   "requires_code_analysis": false,
   "suggested_actions": [
     "Find all screenshot/image files in the project",
     "Analyze the visual content of each image",
-    "Provide a summary of what's shown"
+    "Describe what is shown in the screenshots"
   ],
   "files_needed": true,
-  "file_search_patterns": ["*.png", "*.jpg", "*screenshot*.*"],
-  "file_extensions": [".png", ".jpg", ".jpeg", ".gif"],
-  "search_keywords": ["screenshot", "image", "screen"]
+  "file_search_patterns": ["*.png", "*.jpg", "*.jpeg", "*screenshot*", "*Screenshot*"],
+  "file_extensions": [".png", ".jpg", ".jpeg", ".gif", ".webp"],
+  "search_keywords": ["screenshot", "Screenshot", "image", "screen"]
 }}"""
 
         try:
@@ -1144,6 +1152,9 @@ Example response:
                 
                 # First, use AI-suggested file patterns if available
                 if intent_analysis and intent_analysis.get('file_search_patterns'):
+                    if self.verbose_mode:
+                        self.console.print(f"[dim]AI suggested patterns: {intent_analysis.get('file_search_patterns')}[/dim]")
+                    
                     for pattern in intent_analysis.get('file_search_patterns', []):
                         try:
                             # Handle both simple patterns (*.png) and recursive (**/*.py)
@@ -1241,11 +1252,13 @@ Example response:
             
             # Add image files to context_images
             if image_files:
-                if self.verbose_mode:
-                    self.console.print(f"[dim]Found {len(image_files)} image files[/dim]")
+                self.console.print(f"[green]Found {len(image_files)} image(s) to analyze[/green]")
                 for img_path in image_files:
                     if img_path not in self.context_images:
                         self.context_images.append(img_path)
+                        if self.verbose_mode:
+                            rel_path = img_path.relative_to(self.root_path) if hasattr(img_path, 'relative_to') else img_path
+                            self.console.print(f"  • {rel_path}")
         
         # Auto-fetch URLs if detected
         if detections['urls']:
@@ -1318,8 +1331,14 @@ Example response:
                 self.context_images
             )
             
+            # Show what images are being sent
+            self.console.print(f"[cyan]Sending {len(self.context_images)} image(s) for analysis[/cyan]")
+            if self.verbose_mode:
+                for img in self.context_images:
+                    rel_path = img.relative_to(self.root_path) if hasattr(img, 'relative_to') else img
+                    self.console.print(f"  • {rel_path}")
+            
             # Clear images after use
-            self.console.print(f"[dim]Including {len(self.context_images)} image(s) in message[/dim]")
             self.context_images = []
             
             # Add to conversation as multimodal
