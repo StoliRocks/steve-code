@@ -170,9 +170,35 @@ class ContextManager:
                 role = msg.get('role', 'unknown')
                 content = msg.get('content', '')
                 if isinstance(content, str):
-                    # Truncate long messages
-                    if len(content) > 500:
-                        content = content[:500] + "..."
+                    # For assistant messages, try to extract a summary
+                    if role == 'assistant' and len(content) > 1000:
+                        # Look for summary sections or conclusions
+                        lines = content.split('\n')
+                        summary_lines = []
+                        in_summary = False
+                        
+                        for line in lines:
+                            if any(keyword in line.lower() for keyword in ['summary', 'conclusion', 'in summary', 'to summarize']):
+                                in_summary = True
+                            if in_summary:
+                                summary_lines.append(line)
+                        
+                        if summary_lines:
+                            content = '\n'.join(summary_lines)
+                        else:
+                            # Take first paragraph and last paragraph
+                            paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
+                            if len(paragraphs) > 2:
+                                content = f"{paragraphs[0]}\n\n[...middle content omitted...]\n\n{paragraphs[-1]}"
+                            elif len(paragraphs) == 2:
+                                content = f"{paragraphs[0]}\n\n{paragraphs[1]}"
+                    
+                    # For user messages, keep them shorter but not truncated mid-sentence
+                    elif role == 'user' and len(content) > 500:
+                        sentences = content.split('. ')
+                        if len(sentences) > 3:
+                            content = '. '.join(sentences[:3]) + '...'
+                    
                     older_content.append(f"{role}: {content}")
         
         if older_content:

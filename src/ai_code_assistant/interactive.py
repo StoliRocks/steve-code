@@ -79,7 +79,6 @@ class InteractiveMode:
         '/todo skip': 'Skip the next pending action',
         '/todo actions': 'Show current action queue',
         '/verbose': 'Toggle verbose mode (show/hide technical details like XML blocks)',
-        '/expand': 'Show last response with all sections expanded',
         '/settings': 'Show or modify settings (use /settings <key> <value>)',
         '/set': 'Set a configuration value (temperature, max_tokens, region, auto_detect, verbose)',
         '/config': 'Save current settings to config file',
@@ -475,9 +474,6 @@ class InteractiveMode:
                 self.console.print("[yellow]Verbose mode enabled - showing technical details[/yellow]")
             else:
                 self.console.print("[green]Verbose mode disabled - hiding technical details[/green]")
-        
-        elif cmd == '/expand':
-            self._show_expanded_response()
         
         elif cmd == '/model':
             self._switch_model(args)
@@ -1391,28 +1387,13 @@ Example response for "summarize the screenshots":
         processed = self.response_processor.process(response)
         display_response = self.response_processor.format_for_display(processed)
         
-        # First, parse the response into collapsible sections
-        sections = self.collapsible_output.parse_response(display_response)
-        self.last_response_sections = sections
-        
-        if sections and len(sections) > 3:  # Use collapsible for longer responses
-            # Display summary first
-            self.collapsible_output.display_summary(sections)
-            
-            # Then display sections (collapsed by default)
-            self.console.print("\n[bold]Response:[/bold]")
-            self.collapsible_output.display_sections(sections, expand_all=False)
-            
-            # Hint about expanding
-            self.console.print("\n[dim]Tip: Use /expand to show all sections expanded[/dim]")
-        else:
-            # For short responses, just use markdown
-            try:
-                md = Markdown(display_response)
-                self.console.print(md)
-            except Exception:
-                # Fallback to plain text
-                self.console.print(display_response)
+        # Always show the full AI response - don't collapse the actual answer
+        try:
+            md = Markdown(display_response)
+            self.console.print(md)
+        except Exception:
+            # Fallback to plain text
+            self.console.print(display_response)
         
         # Process actions (pass original response)
         self._process_actions(response)
@@ -2292,16 +2273,9 @@ The files in the context ARE the user's application - analyze them immediately."
     def _show_expanded_response(self):
         """Show the last response with all sections expanded."""
         if not self.last_response:
-            self.console.print("[yellow]No previous response to expand[/yellow]")
+            self.console.print("[yellow]No previous response to show[/yellow]")
             return
-            
-        if self.last_response_sections:
-            self.console.print("\n[bold]Expanded Response:[/bold]")
-            self.collapsible_output.display_sections(self.last_response_sections, expand_all=True)
-        else:
-            # Just show the full response
-            try:
-                md = Markdown(self.last_response)
-                self.console.print(md)
-            except Exception:
-                self.console.print(self.last_response)
+        
+        # Responses are now shown in full by default
+        self.console.print("[dim]Note: Responses are now displayed in full by default.[/dim]")
+        self.console.print("[dim]The /expand command is no longer needed.[/dim]")
