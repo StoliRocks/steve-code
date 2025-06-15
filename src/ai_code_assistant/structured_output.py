@@ -356,10 +356,10 @@ class StructuredOutput:
         # List todos with numbers
         for i, todo in enumerate(todos, 1):
             status_icon = {
-                "pending": "⏳",
-                "in_progress": "🔄",
-                "completed": "✅",
-                "failed": "❌"
+                "pending": "[blue]●[/blue]",
+                "in_progress": "[yellow]►[/yellow]",
+                "completed": "[green]✓[/green]",
+                "failed": "[red]✗[/red]"
             }[todo.status]
             
             # Color based on status
@@ -380,24 +380,41 @@ class StructuredOutput:
             if show_preview and todo.status == "pending" and todo.metadata:
                 if todo.metadata['type'] == 'command':
                     cmd = todo.metadata['action'].command
-                    self.console.print(f"   [dim]└─ $ {cmd}[/dim]")
+                    self.console.print(f"   [dim]└─ Will execute: $ {cmd}[/dim]")
                 elif todo.metadata['type'] == 'file':
                     action = todo.metadata['action']
-                    # Show file path and first line of content
+                    # Show file path and content info
                     if hasattr(action, 'content') and action.content:
                         lines = action.content.strip().split('\n')
-                        preview = lines[0][:60] + "..." if len(lines[0]) > 60 else lines[0]
-                        if len(lines) > 1:
-                            preview += f" (+{len(lines)-1} lines)"
-                        self.console.print(f"   [dim]└─ {preview}[/dim]")
+                        self.console.print(f"   [dim]└─ Will create {len(lines)} lines of {action.language or 'text'}[/dim]")
             
             # Show error for failed items
             if todo.status == "failed" and todo.error:
                 self.console.print(f"   [red]└─ Error: {todo.error}[/red]")
         
-        # Show next action hint
+        # Show next action hint with better preview
         if pending:
             next_idx = next((i for i, t in enumerate(todos, 1) if t.status == "pending"), None)
             if next_idx:
-                self.console.print(f"\n[bold cyan]Next: {todos[next_idx-1].content}[/bold cyan]")
-                self.console.print("[dim]Press Enter to execute, or type a command[/dim]")
+                next_todo = todos[next_idx-1]
+                self.console.print(f"\n[bold cyan]Next action ready:[/bold cyan]")
+                
+                # Show detailed preview based on action type
+                if next_todo.metadata:
+                    if next_todo.metadata['type'] == 'command':
+                        cmd = next_todo.metadata['action'].command
+                        desc = next_todo.metadata['action'].description
+                        self.console.print(f"  [yellow]→ Execute command:[/yellow] {cmd}")
+                        if desc:
+                            self.console.print(f"    [dim]{desc}[/dim]")
+                    elif next_todo.metadata['type'] == 'file':
+                        action = next_todo.metadata['action']
+                        self.console.print(f"  [green]→ {action.action_type.title()} file:[/green] {action.file_path}")
+                        if hasattr(action, 'content') and action.content:
+                            lines = len(action.content.strip().split('\n'))
+                            self.console.print(f"    [dim]{lines} lines of {action.language or 'text'} content[/dim]")
+                else:
+                    self.console.print(f"  → {next_todo.content}")
+                
+                self.console.print("\n[bold]Press Enter to review and execute this action[/bold]")
+                self.console.print("[dim]Or type a command (e.g., /help, /todo skip)[/dim]")

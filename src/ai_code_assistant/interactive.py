@@ -45,6 +45,7 @@ from .response_filter import ResponseFilter
 from .response_processor import ResponseProcessor
 from .update_checker import UpdateChecker, get_update_message
 from .execution_planner import ExecutionPlanner
+from .action_confirmation import ActionConfirmation
 
 logger = logging.getLogger(__name__)
 
@@ -180,8 +181,10 @@ class InteractiveMode:
         # Initialize structured output formatter
         self.structured_output = StructuredOutput(self.console)
         
-        # Initialize action executor
+        # Initialize action executor and confirmation dialog
         self.action_executor = ActionExecutor(self.console, self.root_path)
+        self.action_confirmation = ActionConfirmation(self.console)
+        self.skip_confirmations = False  # Track if user wants to skip confirmations
         
         # Initialize collapsible output
         self.collapsible_output = CollapsibleOutput(self.console)
@@ -1435,12 +1438,21 @@ Example response for "summarize the screenshots":
             # Display as todo list
             self.structured_output.display_action_todos(self.action_todos)
             
-            # Show quick execute option
+            # Show clear summary of what will happen
             if self.action_todos:
-                self.console.print("\n[cyan]Quick actions:[/cyan]")
-                self.console.print("  • Press [bold]Enter[/bold] to execute next action")
-                self.console.print("  • Type [bold]/todo all[/bold] to execute all at once")
-                self.console.print("  • Type [bold]/todo skip[/bold] to skip current action")
+                self.console.print("\n[bold green]✓ Actions identified:[/bold green]")
+                
+                # Count action types
+                file_count = sum(1 for t in self.action_todos if t.metadata and t.metadata['type'] == 'file')
+                cmd_count = sum(1 for t in self.action_todos if t.metadata and t.metadata['type'] == 'command')
+                
+                if file_count > 0:
+                    self.console.print(f"  • {file_count} file{'s' if file_count > 1 else ''} to create/modify")
+                if cmd_count > 0:
+                    self.console.print(f"  • {cmd_count} command{'s' if cmd_count > 1 else ''} to execute")
+                
+                self.console.print("\n[yellow]Actions require your approval before execution[/yellow]")
+                self.console.print("[dim]Press Enter to review the first action[/dim]")
                 
         else:
             # Check if response looks like it has unstructured actions
@@ -1933,31 +1945,59 @@ Example response for "summarize the screenshots":
         success = False
         try:
             if todo.metadata and todo.metadata['type'] == 'command':
-                success = self.action_executor.execute_command(todo.metadata['action'])
-            elif todo.metadata and todo.metadata['type'] == 'file':
-                # Show confirmation for file creation
+                # Use new confirmation dialog for command execution
                 action = todo.metadata['action']
-                try:
-                    rel_path = action.file_path.relative_to(self.root_path)
-                except ValueError:
-                    rel_path = action.file_path
                 
-                self.console.print(f"\n[cyan]Creating file: {rel_path}[/cyan]")
+                if self.skip_confirmations:
+                    confirmed = True
+                else:
+                    confirmed, dont_ask = self.action_confirmation.confirm_command_action(
+                        action.command,
+                        action.description
+                    )
+                    
+                    if dont_ask:
+                        self.skip_confirmations = True
+                        self.console.print("[dim]✓ Confirmations disabled for this session[/dim]")
                 
-                # Show content preview
-                if hasattr(action, 'content') and action.content:
-                    lines = action.content.strip().split('\n')
-                    if len(lines) <= 10:
-                        self.console.print("[dim]Content:[/dim]")
-                        for line in lines:
-                            self.console.print(f"  [dim]{line}[/dim]")
-                    else:
-                        self.console.print("[dim]Content preview:[/dim]")
-                        for line in lines[:5]:
-                            self.console.print(f"  [dim]{line}[/dim]")
-                        self.console.print(f"  [dim]... ({len(lines) - 5} more lines)[/dim]")
+                if confirmed:
+                    success = self.action_executor.execute_command(action)
+                else:
+                    self.console.print("[yellow]Skipped[/yellow]")
+                    todo.status = "pending"
+                    return
+            elif todo.metadata and todo.metadata['type'] == 'file':
+                # Use new confirmation dialog for file actions
+                action = todo.metadata['action']
                 
-                if self._confirm_action("Create this file?"):
+                # Determine language from file extension
+                language = action.language
+                if not language and hasattr(action, 'file_path'):
+                    ext = action.file_path.suffix.lstrip('.')
+                    language_map = {
+                        'py': 'python', 'js': 'javascript', 'ts': 'typescript',
+                        'java': 'java', 'cpp': 'cpp', 'c': 'c', 'go': 'go',
+                        'rs': 'rust', 'rb': 'ruby', 'php': 'php', 'sh': 'bash',
+                        'yml': 'yaml', 'yaml': 'yaml', 'json': 'json', 'xml': 'xml',
+                        'html': 'html', 'css': 'css', 'scss': 'scss', 'md': 'markdown'
+                    }
+                    language = language_map.get(ext)
+                
+                if self.skip_confirmations:
+                    confirmed = True
+                else:
+                    confirmed, dont_ask = self.action_confirmation.confirm_file_action(
+                        action.action_type,
+                        action.file_path,
+                        action.content if hasattr(action, 'content') else None,
+                        language
+                    )
+                    
+                    if dont_ask:
+                        self.skip_confirmations = True
+                        self.console.print("[dim]✓ Confirmations disabled for this session[/dim]")
+                
+                if confirmed:
                     success = self.action_executor.execute_file_action(action)
                 else:
                     self.console.print("[yellow]Skipped[/yellow]")
