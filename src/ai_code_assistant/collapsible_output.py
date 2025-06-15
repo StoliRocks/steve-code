@@ -48,10 +48,10 @@ class CollapsibleSection:
             else:
                 console.print(Panel(self.content, title=self.title, border_style="blue"))
         else:
-            # Show collapsed with line count
-            hint = f"[dim]{self.line_count} lines (use /expand to show all)[/dim]"
-            console.print(f"● {self.title}")
-            console.print(f"  ⎿ {hint}")
+            # Show collapsed with line count - Claude Code style
+            hint = f"[dim]{self.line_count} lines (press Enter to expand)[/dim]"
+            console.print(f"[cyan]● {self.title}[/cyan]")
+            console.print(f"  [dim]⎿ {hint}[/dim]")
 
 
 class CollapsibleOutput:
@@ -65,6 +65,33 @@ class CollapsibleOutput:
         """
         self.console = console
         self.sections: List[CollapsibleSection] = []
+        
+    def format_tool_usage(self, tool_name: str, args: str, output: str = None, 
+                         collapsed: bool = True) -> None:
+        """Format tool usage in Claude Code style.
+        
+        Args:
+            tool_name: Name of the tool (Read, Write, Bash, etc.)
+            args: Tool arguments (file path, command, etc.)
+            output: Tool output (optional)
+            collapsed: Whether to show collapsed by default
+        """
+        # Tool invocation with bullet point
+        self.console.print(f"\n[cyan]● {tool_name}([blue]{args}[/blue])[/cyan]")
+        
+        if output:
+            lines = output.split('\n')
+            line_count = len(lines)
+            
+            if collapsed and line_count > 10:
+                # Show collapsed
+                preview = '\n'.join(lines[:5])
+                if preview:
+                    self.console.print(Panel(preview + "\n...", border_style="dim"))
+                self.console.print(f"  [dim]⎿ {line_count} lines (press Enter to expand)[/dim]")
+            else:
+                # Show full output
+                self.console.print(Panel(output, border_style="dim"))
         
     def parse_response(self, response: str) -> List[CollapsibleSection]:
         """Parse an AI response into collapsible sections.

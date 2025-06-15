@@ -1184,15 +1184,32 @@ Example response:
         # Add file context (manual files take precedence over discovered)
         files_to_include = self.context_files if self.context_files else discovered_files
         if files_to_include:
-            if self.verbose_mode:
-                self.console.print(f"[dim]Including {len(files_to_include)} files in context...[/dim]")
-            context = self.file_manager.create_context_from_files(files_to_include)
-            if context:
-                content_parts.append(context)
+            # Separate text files from image files
+            text_files = []
+            image_files = []
+            for file_path in files_to_include:
+                if self.image_handler.is_image_file(file_path):
+                    image_files.append(file_path)
+                else:
+                    text_files.append(file_path)
+            
+            # Add text files to context
+            if text_files:
                 if self.verbose_mode:
-                    self.console.print(f"[dim]Added {len(context)} characters of file content[/dim]")
-            else:
-                self.console.print("[yellow]Warning: No file content generated![/yellow]")
+                    self.console.print(f"[dim]Including {len(text_files)} text files in context...[/dim]")
+                context = self.file_manager.create_context_from_files(text_files)
+                if context:
+                    content_parts.append(context)
+                    if self.verbose_mode:
+                        self.console.print(f"[dim]Added {len(context)} characters of file content[/dim]")
+            
+            # Add image files to context_images
+            if image_files:
+                if self.verbose_mode:
+                    self.console.print(f"[dim]Found {len(image_files)} image files[/dim]")
+                for img_path in image_files:
+                    if img_path not in self.context_images:
+                        self.context_images.append(img_path)
         
         # Auto-fetch URLs if detected
         if detections['urls']:
